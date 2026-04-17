@@ -30,6 +30,8 @@ export interface ViewState {
 export interface RenderTask {
   type: 'render';
   taskId: number;
+  /** Render generation — used to discard stale results */
+  gen: number;
   /** Tile position/size in screen pixels */
   tileX: number;
   tileY: number;
@@ -49,10 +51,30 @@ export interface RenderTask {
   colorOffset: number;
 }
 
+/** Message sent to a worker to recolor a cached tile without recomputing the fractal */
+export interface RecolorTask {
+  type: 'recolor';
+  taskId: number;
+  gen: number;
+  tileX: number;
+  tileY: number;
+  tileW: number;
+  tileH: number;
+  palette: number;
+  colorSpeed: number;
+  colorOffset: number;
+}
+
+/** Broadcast to all workers: discard their cached iteration data */
+export interface ClearCacheMessage {
+  type: 'clearCache';
+}
+
 /** Message sent from a worker with a completed tile */
 export interface RenderResult {
   type: 'result';
   taskId: number;
+  gen: number;
   tileX: number;
   tileY: number;
   tileW: number;
@@ -72,7 +94,7 @@ export interface ReadyMessage {
   type: 'ready';
 }
 
-export type ToWorkerMessage = InitMessage | RenderTask;
+export type ToWorkerMessage = InitMessage | RenderTask | RecolorTask | ClearCacheMessage;
 export type FromWorkerMessage = ReadyMessage | RenderResult;
 
 /** Named palette definition */

@@ -5,7 +5,7 @@
  */
 
 import './style.css';
-import type { ViewState, RenderTask, RenderResult, Bookmark } from './types';
+import type { ViewState, RenderTask, RecolorTask, RenderResult, Bookmark } from './types';
 import { PALETTES } from './colorPalettes';
 
 // ─── Worker pool ──────────────────────────────────────────────────────────────
@@ -40,12 +40,14 @@ const DEFAULT_VIEW: ViewState = {
 
 let view: ViewState = { ...DEFAULT_VIEW };
 let renderGen = 0;          // incremented on each render to cancel stale results
+let recolorGen = 0;         // incremented on each recolor request to cancel stale results
 let pendingTiles = 0;
 let completedTiles = 0;
 let totalTiles = 0;
 let isRendering = false;
 let autoZoomActive = false;
 let autoZoomRaf = 0;
+let autoZoomFrame = 0;
 let colorAnimRaf = 0;
 let colorAnimActive = false;
 
@@ -53,6 +55,12 @@ let colorAnimActive = false;
 interface PendingTask { task: RenderTask; gen: number }
 const taskQueue: PendingTask[] = [];
 const workerBusy: boolean[] = Array(NUM_WORKERS).fill(false);
+
+// Maps tile key `${tileX},${tileY}` → worker index (set when a tile is dispatched)
+const tileWorkerMap = new Map<string, number>();
+
+// Tracks how many recolor tiles are still pending for the current recolorGen
+let pendingRecolorTiles = 0;
 
 // ─── Canvas setup ─────────────────────────────────────────────────────────────
 
@@ -96,7 +104,11 @@ function scheduleRender() {
   renderGen++;
   const gen = renderGen;
 
+  // Tell every worker to drop its cached iteration data so memory is not wasted
+  for (const w of workers) w.postMessage({ type: 'clearCache' });
+
   taskQueue.length = 0;
+  tileWorkerMap.clear();
   pendingTiles = 0;
   completedTiles = 0;
 
@@ -120,6 +132,7 @@ function scheduleRender() {
       const task: RenderTask = {
         type: 'render',
         taskId: taskId++,
+        gen,
         tileX, tileY, tileW, tileH,
         xMin: view.xMin + (tileX / cw) * xRange,
         yMin: view.yMin + (tileY / ch) * yRange,
@@ -146,12 +159,19 @@ function scheduleRender() {
 }
 
 function dispatchTasks() {
-  for (let i = 0; i < NUM_WORKERS && taskQueue.length > 0; i++) {
-    if (!workerBusy[i]) {
+  let workerIdx = 0;
+  while (workerIdx < NUM_WORKERS && taskQueue.length > 0) {
+    if (!workerBusy[workerIdx]) {
       const item = taskQueue.shift()!;
-      workerBusy[i] = true;
-      workers[i].postMessage(item.task);
+      if (item.gen !== renderGen) {
+        // Skip stale tasks without advancing to the next worker
+        continue;
+      }
+      workerBusy[workerIdx] = true;
+      tileWorkerMap.set(`${item.task.tileX},${item.task.tileY}`, workerIdx);
+      workers[workerIdx].postMessage(item.task);
     }
+    workerIdx++;
   }
 }
 
@@ -173,8 +193,11 @@ function handleWorkerMessage(e: MessageEvent) {
 
     const result = msg as RenderResult;
 
-    // Draw tile onto offscreen canvas
-    if (offCtx && offscreen) {
+    // Discard results from a superseded render or recolor generation
+    const isCurrentRender  = result.gen === renderGen;
+    const isCurrentRecolor = result.gen === recolorGen;
+
+    if ((isCurrentRender || isCurrentRecolor) && offCtx && offscreen) {
       const imgData = new ImageData(
         new Uint8ClampedArray(result.imageData),
         result.tileW,
@@ -185,17 +208,23 @@ function handleWorkerMessage(e: MessageEvent) {
       ctx.drawImage(offscreen, 0, 0);
     }
 
-    completedTiles++;
-    const progress = completedTiles / totalTiles;
-    updateProgressBar(progress);
+    if (isCurrentRender) {
+      completedTiles++;
+      const progress = completedTiles / totalTiles;
+      updateProgressBar(progress);
 
-    if (completedTiles >= totalTiles) {
-      isRendering = false;
-      updateProgressBar(1);
-      setTimeout(() => updateProgressBar(-1), 500);
+      if (completedTiles >= totalTiles) {
+        isRendering = false;
+        updateProgressBar(1);
+        setTimeout(() => updateProgressBar(-1), 500);
+      }
+
+      dispatchTasks();
     }
 
-    dispatchTasks();
+    if (isCurrentRecolor) {
+      pendingRecolorTiles--;
+    }
   }
 }
 
@@ -207,7 +236,50 @@ function screenToFractal(sx: number, sy: number): [number, number] {
   return [fx, fy];
 }
 
-function zoomAt(screenX: number, screenY: number, factor: number) {
+/**
+ * Send recolor-only tasks to workers using their cached iteration data.
+ * Colourises tiles without recomputing the fractal — used for color animation
+ * and palette/speed changes when the view hasn't moved.
+ */
+function scheduleRecolor() {
+  if (!offscreen || workersReady < NUM_WORKERS || tileWorkerMap.size === 0) return;
+  recolorGen++;
+  const gen = recolorGen;
+  let count = 0;
+
+  const cw = canvas.width;
+  const ch = canvas.height;
+  const cols = Math.ceil(cw / TILE_SIZE);
+  const rows = Math.ceil(ch / TILE_SIZE);
+
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      const tileX = col * TILE_SIZE;
+      const tileY = row * TILE_SIZE;
+      const tileW = Math.min(TILE_SIZE, cw - tileX);
+      const tileH = Math.min(TILE_SIZE, ch - tileY);
+      const key = `${tileX},${tileY}`;
+      const workerIdx = tileWorkerMap.get(key);
+      if (workerIdx === undefined) continue;
+
+      const task: RecolorTask = {
+        type: 'recolor',
+        taskId: col + row * cols,
+        gen,
+        tileX, tileY, tileW, tileH,
+        palette: view.palette,
+        colorSpeed: view.colorSpeed,
+        colorOffset: view.colorOffset,
+      };
+      workers[workerIdx].postMessage(task);
+      count++;
+    }
+  }
+
+  pendingRecolorTiles = count;
+}
+
+function zoomAt(screenX: number, screenY: number, factor: number, rerender = true) {
   const [fx, fy] = screenToFractal(screenX * devicePixelRatio, screenY * devicePixelRatio);
   const xRange = (view.xMax - view.xMin) * factor;
   const yRange = (view.yMax - view.yMin) * factor;
@@ -216,7 +288,7 @@ function zoomAt(screenX: number, screenY: number, factor: number) {
   view.yMin = fy - yRange * (screenY / canvas.clientHeight);
   view.yMax = fy + yRange * (1 - screenY / canvas.clientHeight);
   updateZoom();
-  scheduleRender();
+  if (rerender) scheduleRender();
 }
 
 function updateZoom() {
@@ -243,6 +315,10 @@ let dragStartY = 0;
 let dragViewXMin = 0;
 let dragViewYMin = 0;
 let lastTouchDist = 0;
+// Snapshot of the offscreen canvas taken at drag start for instant visual pan
+let panSource: OffscreenCanvas | null = null;
+// Debounce timer for wheel zoom re-renders
+let wheelTimer: ReturnType<typeof setTimeout> | null = null;
 
 canvas.addEventListener('mousedown', (e) => {
   if (e.button !== 0) return;
@@ -252,21 +328,33 @@ canvas.addEventListener('mousedown', (e) => {
   dragViewXMin = view.xMin;
   dragViewYMin = view.yMin;
   canvas.style.cursor = 'grabbing';
+
+  // Snapshot the current canvas so we can pan it visually without re-rendering
+  panSource = new OffscreenCanvas(canvas.width, canvas.height);
+  const psCtx = panSource.getContext('2d') as OffscreenCanvasRenderingContext2D;
+  psCtx.drawImage(canvas, 0, 0);
+
+  // Cancel any in-progress render — we'll issue a fresh one on mouseup
+  renderGen++;
 });
 
 canvas.addEventListener('mousemove', (e) => {
   if (isDragging) {
+    const dpr = window.devicePixelRatio || 1;
     const dx = e.clientX - dragStartX;
     const dy = e.clientY - dragStartY;
+
+    // Pan the snapshot visually — instant, no worker involvement
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (panSource) ctx.drawImage(panSource, Math.round(dx * dpr), Math.round(dy * dpr));
+
+    // Keep view coordinates up to date
     const xRange = view.xMax - view.xMin;
     const yRange = view.yMax - view.yMin;
-    const fracDx = -(dx / canvas.clientWidth)  * xRange;
-    const fracDy = -(dy / canvas.clientHeight) * yRange;
-    view.xMin = dragViewXMin + fracDx;
-    view.xMax = dragViewXMin + fracDx + xRange;
-    view.yMin = dragViewYMin + fracDy;
-    view.yMax = dragViewYMin + fracDy + yRange;
-    scheduleRender();
+    view.xMin = dragViewXMin - (dx / canvas.clientWidth)  * xRange;
+    view.xMax = view.xMin + xRange;
+    view.yMin = dragViewYMin - (dy / canvas.clientHeight) * yRange;
+    view.yMax = view.yMin + yRange;
   }
 
   // Update Julia constant from mouse position (when in Julia preview mode)
@@ -279,20 +367,45 @@ canvas.addEventListener('mousemove', (e) => {
   }
 });
 
-canvas.addEventListener('mouseup', () => {
+function endDrag() {
+  if (!isDragging) return;
   isDragging = false;
+  panSource = null;
   canvas.style.cursor = 'crosshair';
-});
+  scheduleRender();
+}
 
-canvas.addEventListener('mouseleave', () => {
-  isDragging = false;
-  canvas.style.cursor = 'crosshair';
-});
+canvas.addEventListener('mouseup', endDrag);
+canvas.addEventListener('mouseleave', endDrag);
 
 canvas.addEventListener('wheel', (e) => {
   e.preventDefault();
   const factor = e.deltaY > 0 ? 1.15 : 0.87;
-  zoomAt(e.clientX, e.clientY, factor);
+
+  // Update view coordinates without triggering a full re-render yet
+  zoomAt(e.clientX, e.clientY, factor, false);
+
+  // Scale the existing canvas content around the zoom point for instant feedback
+  if (offscreen) {
+    const dpr = window.devicePixelRatio || 1;
+    const zoomX = e.clientX * dpr;
+    const zoomY = e.clientY * dpr;
+    const visualScale = 1 / factor;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.save();
+    ctx.translate(zoomX, zoomY);
+    ctx.scale(visualScale, visualScale);
+    ctx.translate(-zoomX, -zoomY);
+    ctx.drawImage(offscreen, 0, 0);
+    ctx.restore();
+  }
+
+  // Debounce the actual re-render so rapid scroll events don't each start a render
+  if (wheelTimer !== null) clearTimeout(wheelTimer);
+  wheelTimer = setTimeout(() => {
+    wheelTimer = null;
+    scheduleRender();
+  }, 120);
 }, { passive: false });
 
 canvas.addEventListener('dblclick', (e) => {
@@ -308,8 +421,14 @@ canvas.addEventListener('touchstart', (e) => {
     dragStartY = e.touches[0].clientY;
     dragViewXMin = view.xMin;
     dragViewYMin = view.yMin;
+
+    panSource = new OffscreenCanvas(canvas.width, canvas.height);
+    const psCtx = panSource.getContext('2d') as OffscreenCanvasRenderingContext2D;
+    psCtx.drawImage(canvas, 0, 0);
+    renderGen++;
   } else if (e.touches.length === 2) {
     isDragging = false;
+    panSource = null;
     lastTouchDist = Math.hypot(
       e.touches[1].clientX - e.touches[0].clientX,
       e.touches[1].clientY - e.touches[0].clientY
@@ -320,15 +439,19 @@ canvas.addEventListener('touchstart', (e) => {
 canvas.addEventListener('touchmove', (e) => {
   e.preventDefault();
   if (e.touches.length === 1 && isDragging) {
+    const dpr = window.devicePixelRatio || 1;
     const dx = e.touches[0].clientX - dragStartX;
     const dy = e.touches[0].clientY - dragStartY;
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (panSource) ctx.drawImage(panSource, Math.round(dx * dpr), Math.round(dy * dpr));
+
     const xRange = view.xMax - view.xMin;
     const yRange = view.yMax - view.yMin;
     view.xMin = dragViewXMin - (dx / canvas.clientWidth) * xRange;
     view.xMax = view.xMin + xRange;
     view.yMin = dragViewYMin - (dy / canvas.clientHeight) * yRange;
     view.yMax = view.yMin + yRange;
-    scheduleRender();
   } else if (e.touches.length === 2) {
     const dist = Math.hypot(
       e.touches[1].clientX - e.touches[0].clientX,
@@ -337,12 +460,31 @@ canvas.addEventListener('touchmove', (e) => {
     const factor = lastTouchDist / dist;
     const mx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
     const my = (e.touches[0].clientY + e.touches[1].clientY) / 2;
-    zoomAt(mx, my, factor);
+    zoomAt(mx, my, factor, false);
+
+    if (offscreen) {
+      const dpr = window.devicePixelRatio || 1;
+      const zoomX = mx * dpr;
+      const zoomY = my * dpr;
+      const visualScale = 1 / factor;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.save();
+      ctx.translate(zoomX, zoomY);
+      ctx.scale(visualScale, visualScale);
+      ctx.translate(-zoomX, -zoomY);
+      ctx.drawImage(offscreen, 0, 0);
+      ctx.restore();
+    }
+
+    if (wheelTimer !== null) clearTimeout(wheelTimer);
+    wheelTimer = setTimeout(() => { wheelTimer = null; scheduleRender(); }, 120);
     lastTouchDist = dist;
   }
 }, { passive: false });
 
-canvas.addEventListener('touchend', () => { isDragging = false; });
+canvas.addEventListener('touchend', () => {
+  if (isDragging) endDrag();
+});
 
 // ─── Keyboard shortcuts ───────────────────────────────────────────────────────
 
@@ -421,7 +563,7 @@ function toggleJulia() {
 function cyclePalette() {
   view.palette = (view.palette + 1) % PALETTES.length;
   updatePaletteUI();
-  scheduleRender();
+  if (tileWorkerMap.size > 0) scheduleRecolor(); else scheduleRender();
 }
 
 function updatePaletteUI() {
@@ -451,6 +593,7 @@ function toggleAutoZoom() {
   const btn = document.getElementById('auto-zoom-btn');
   if (btn) btn.classList.toggle('btn-active', autoZoomActive);
   if (autoZoomActive) {
+    autoZoomFrame = 0;
     runAutoZoom();
   } else {
     cancelAnimationFrame(autoZoomRaf);
@@ -460,25 +603,39 @@ function toggleAutoZoom() {
 function runAutoZoom() {
   if (!autoZoomActive) return;
   const [tx, ty] = AUTO_ZOOM_TARGETS[autoZoomTargetIdx % AUTO_ZOOM_TARGETS.length];
-  const cx = canvas.clientWidth / 2;
-  const cy = canvas.clientHeight / 2;
-  // Move towards target, then zoom
   const currentCx = (view.xMin + view.xMax) / 2;
   const currentCy = (view.yMin + view.yMax) / 2;
 
-  const frac = 0.02;
-  view.xMin += (tx - currentCx) * frac - (view.xMax - view.xMin) * 0.003;
-  view.xMax += (tx - currentCx) * frac + (view.xMax - view.xMin) * 0.003;
-  view.yMin += (ty - currentCy) * frac - (view.yMax - view.yMin) * 0.003;
-  view.yMax += (ty - currentCy) * frac + (view.yMax - view.yMin) * 0.003;
-  void cx; void cy;
-
+  // Smaller per-frame step for ~60fps smoothness (equivalent to old 0.003/frame @6fps)
+  const moveStep = 0.0035;
+  const zoomStep = 0.0005;
+  view.xMin += (tx - currentCx) * moveStep - (view.xMax - view.xMin) * zoomStep;
+  view.xMax += (tx - currentCx) * moveStep + (view.xMax - view.xMin) * zoomStep;
+  view.yMin += (ty - currentCy) * moveStep - (view.yMax - view.yMin) * zoomStep;
+  view.yMax += (ty - currentCy) * moveStep + (view.yMax - view.yMin) * zoomStep;
   updateZoom();
-  scheduleRender();
 
-  autoZoomRaf = requestAnimationFrame(() => {
-    setTimeout(runAutoZoom, 150); // throttle to ~6fps for smooth-looking zoom
-  });
+  autoZoomFrame++;
+
+  // Every 10 frames trigger a high-quality re-render; in between, scale the existing
+  // render to simulate zoom — this gives smooth 60fps motion with ~6fps full renders.
+  if (autoZoomFrame % 10 === 0) {
+    scheduleRender();
+  } else if (offscreen) {
+    // Apply a tiny zoom-in scale centred on the canvas for visual continuity
+    const cx = canvas.width / 2;
+    const cy = canvas.height / 2;
+    const s = 1 + zoomStep * 2;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.scale(s, s);
+    ctx.translate(-cx, -cy);
+    ctx.drawImage(offscreen, 0, 0);
+    ctx.restore();
+  }
+
+  autoZoomRaf = requestAnimationFrame(runAutoZoom);
 }
 
 // ─── Color animation ──────────────────────────────────────────────────────────
@@ -494,7 +651,8 @@ function toggleColorAnim() {
 function runColorAnim() {
   if (!colorAnimActive) return;
   view.colorOffset = (view.colorOffset + 0.002) % 1;
-  scheduleRender();
+  // Recolour tiles in workers without recomputing the fractal
+  scheduleRecolor();
   colorAnimRaf = requestAnimationFrame(runColorAnim);
 }
 
@@ -533,7 +691,8 @@ function initSettingsPanel() {
   const paletteSelect = document.getElementById('palette-select') as HTMLSelectElement;
   paletteSelect.addEventListener('change', () => {
     view.palette = parseInt(paletteSelect.value);
-    scheduleRender();
+    // Recolour in place if iteration data is cached; otherwise full re-render
+    if (tileWorkerMap.size > 0) scheduleRecolor(); else scheduleRender();
   });
 
   // Color speed slider
@@ -543,7 +702,7 @@ function initSettingsPanel() {
     view.colorSpeed = parseFloat(speedSlider.value);
     const disp = document.getElementById('speed-display');
     if (disp) disp.textContent = speedSlider.value;
-    scheduleRender();
+    if (tileWorkerMap.size > 0) scheduleRecolor(); else scheduleRender();
   });
 
   // Julia controls
