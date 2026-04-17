@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Turbo Mandelbrot Explorer</title>
+  <meta name="description" content="High-performance Mandelbrot fractal explorer with WASM acceleration, smooth color palettes, and Julia set mode." />
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌌</text></svg>" />
+</head>
+<body>
+  <!-- Fractal canvas (z-index 0, fills viewport) -->
+  <canvas id="fractal-canvas"></canvas>
+
+  <!-- ─── Top Bar ──────────────────────────────────────────── -->
+  <div id="top-bar">
+    <span class="title-gradient font-bold text-sm tracking-wide title-text select-none">
+      🌌 Turbo Mandelbrot
+    </span>
+    <div style="flex:1"></div>
+    <button id="julia-btn"     class="btn">🌀 <span class="btn-label">Julia Set</span></button>
+    <button id="auto-zoom-btn" class="btn">🔭 <span class="btn-label">Auto Zoom</span></button>
+    <button id="color-anim-btn"class="btn">🎨 <span class="btn-label">Animate</span></button>
+    <button id="reset-btn"     class="btn">🏠 <span class="btn-label">Reset</span></button>
+    <button id="screenshot-btn"class="btn btn-icon" title="Save PNG">📸</button>
+    <button id="bookmark-btn"  class="btn btn-icon" title="Bookmark view">🔖</button>
+    <button id="help-btn"      class="btn btn-icon" title="Keyboard shortcuts">?</button>
+    <button id="settings-toggle" class="btn">⚙️ <span class="btn-label">Settings</span></button>
+  </div>
+
+  <!-- ─── Progress Bar ─────────────────────────────────────── -->
+  <div id="progress-container" class="hidden-bar">
+    <div id="progress-bar"></div>
+  </div>
+
+  <!-- ─── HUD ──────────────────────────────────────────────── -->
+  <div id="hud">
+    <div class="hud-chip">🔍 <span id="zoom-counter">1.0×</span></div>
+    <div class="hud-chip">⟳ <span id="iter-counter">256</span> iter</div>
+    <div id="julia-coords" class="hud-chip" style="display:none;color:#a5b4fc">c = …</div>
+    <div style="flex:1"></div>
+    <div class="hud-chip hud-hint" style="font-size:0.65rem;color:#475569">
+      ⌨ R=Reset J=Julia P=Palette S=Screenshot A=Auto C=Color ±Iter
+    </div>
+  </div>
+
+  <!-- ─── Settings Panel ───────────────────────────────────── -->
+  <div id="settings-panel">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem">
+      <span class="title-gradient" style="font-weight:700;font-size:0.875rem">⚙️ Settings</span>
+      <button id="settings-close" class="btn btn-icon" style="color:#94a3b8">✕</button>
+    </div>
+
+    <!-- Rendering -->
+    <div class="section-title">🧮 Rendering</div>
+    <label class="ctrl-label">Max Iterations</label>
+    <div class="ctrl-row">
+      <input id="iter-slider" type="range" min="32" max="4096" value="256" step="32" />
+      <span class="ctrl-value"><span id="iter-display">256</span></span>
+    </div>
+
+    <!-- Palette -->
+    <div class="section-title">🎨 Color Palette</div>
+    <select id="palette-select">
+      <option value="0">🌌 Ultra Fractal</option>
+      <option value="1">🔥 Fire</option>
+      <option value="2">🌊 Ocean Deep</option>
+      <option value="3">⚡ Electric Dreams</option>
+      <option value="4">◐ Monochrome</option>
+    </select>
+
+    <label class="ctrl-label" style="margin-top:0.75rem">Color Speed</label>
+    <div class="ctrl-row">
+      <input id="speed-slider" type="range" min="0.5" max="20" step="0.5" value="3" />
+      <span class="ctrl-value">×<span id="speed-display">3</span></span>
+    </div>
+
+    <!-- Julia Set -->
+    <div class="section-title">🌀 Julia Set</div>
+    <label class="ctrl-label">c (real)</label>
+    <input id="julia-re" type="number" step="0.0001" value="-0.7269" />
+    <label class="ctrl-label">c (imaginary)</label>
+    <input id="julia-im" type="number" step="0.0001" value="0.1889" />
+
+    <div class="section-title" style="margin-top:0.25rem">Julia Presets</div>
+    <div class="julia-grid">
+      <button class="btn julia-preset" data-re="-0.7269" data-im="0.1889">Orbit Trap</button>
+      <button class="btn julia-preset" data-re="-0.4"    data-im="0.6"   >Dendrite</button>
+      <button class="btn julia-preset" data-re="0.285"   data-im="0.01"  >Crystal</button>
+      <button class="btn julia-preset" data-re="-1.476"  data-im="0.0"   >Basilica</button>
+      <button class="btn julia-preset" data-re="-0.835"  data-im="-0.2321">Rabbit</button>
+      <button class="btn julia-preset" data-re="0.0"     data-im="1.0"   >Siegel Disk</button>
+    </div>
+
+    <!-- Bookmarks -->
+    <div class="section-title">🔖 Locations</div>
+    <div id="bookmark-list"></div>
+
+    <!-- Info -->
+    <div class="section-title">ℹ️ Info</div>
+    <p style="font-size:0.7rem;color:#64748b;line-height:1.6;margin:0">
+      Powered by <strong style="color:#94a3b8">AssemblyScript WASM</strong> + Web Workers.<br>
+      Scroll to zoom · Drag to pan · Double-click to zoom in · Pinch on touch.
+    </p>
+  </div>
+
+  <!-- ─── Help Modal ────────────────────────────────────────── -->
+  <div id="help-modal" class="hidden">
+    <div id="help-content">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem">
+        <h2 class="title-gradient" style="font-weight:700;font-size:1rem;margin:0">⌨️ Keyboard Shortcuts</h2>
+        <button id="help-close" class="btn btn-icon" style="color:#94a3b8">✕</button>
+      </div>
+      <div class="shortcut-row"><span>Reset view</span><kbd>R</kbd></div>
+      <div class="shortcut-row"><span>Toggle Julia mode</span><kbd>J</kbd></div>
+      <div class="shortcut-row"><span>Cycle palette</span><kbd>P</kbd></div>
+      <div class="shortcut-row"><span>Save screenshot</span><kbd>S</kbd></div>
+      <div class="shortcut-row"><span>Toggle auto-zoom</span><kbd>A</kbd></div>
+      <div class="shortcut-row"><span>Toggle color animation</span><kbd>C</kbd></div>
+      <div class="shortcut-row"><span>Increase iterations</span><kbd>+</kbd></div>
+      <div class="shortcut-row"><span>Decrease iterations</span><kbd>-</kbd></div>
+      <div class="shortcut-row"><span>Zoom in (center)</span><kbd>Z</kbd></div>
+      <div class="shortcut-row"><span>Zoom out (center)</span><kbd>X</kbd></div>
+      <div class="shortcut-row"><span>Pan</span><kbd>←</kbd> <kbd>→</kbd> <kbd>↑</kbd> <kbd>↓</kbd></div>
+      <div class="shortcut-row"><span>Zoom in (click)</span><span>Double-click</span></div>
+      <div class="shortcut-row"><span>Zoom</span><span>Scroll wheel</span></div>
+      <div class="shortcut-row"><span>Pan</span><span>Click &amp; drag</span></div>
+      <div class="shortcut-row"><span>Pinch zoom</span><span>Two-finger pinch</span></div>
+      <p style="font-size:0.7rem;color:#475569;margin-top:1rem;line-height:1.5">
+        Tip: Double-click any point to deep zoom into it. In Julia mode, hover to explore different Julia parameters!
+      </p>
+    </div>
+  </div>
+
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
