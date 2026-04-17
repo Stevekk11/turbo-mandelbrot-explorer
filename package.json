@@ -1,0 +1,22 @@
+{
+  "name": "turbo-mandelbrot-explorer",
+  "version": "1.0.0",
+  "description": "High performance Mandelbrot fractal explorer in TypeScript and WASM",
+  "type": "module",
+  "scripts": {
+    "dev": "npm run build:wasm && vite",
+    "build": "npm run build:wasm && tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "build:wasm": "asc assembly/mandelbrot.ts -o public/mandelbrot.wasm --runtime stub"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.2.2",
+    "@types/node": "^25.6.0",
+    "assemblyscript": "^0.28.14",
+    "autoprefixer": "^10.5.0",
+    "postcss": "^8.5.10",
+    "tailwindcss": "^4.2.2",
+    "typescript": "^6.0.3",
+    "vite": "^8.0.8"
+  }
+}
