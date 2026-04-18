@@ -571,7 +571,12 @@ document.addEventListener('keydown', (e) => {
   const cy = canvas.clientHeight / 2;
 
   switch (key) {
-    case '+': case '=': view.maxIter = Math.min(4096, Math.round(view.maxIter * 1.5)); updateIterDisplay(); scheduleRender(); break;
+    case '+':
+    case '=':
+      view.maxIter = Math.min(10000, Math.round(view.maxIter * 1.5));
+      updateIterDisplay();
+      scheduleRender();
+      break;
     case '-': view.maxIter = Math.max(32, Math.round(view.maxIter / 1.5)); updateIterDisplay(); scheduleRender(); break;
     case 'r': resetView(); break;
     case 'j': toggleJulia(); break;
