@@ -3,9 +3,11 @@
  *
  * Loads the WASM module once, then handles render tasks off the main thread.
  * Each task renders a rectangular tile and returns RGBA pixel data.
+ * Iteration data is cached per tile so color-only changes can be applied
+ * without recomputing the fractal (recolor task).
  */
 
-import type { ToWorkerMessage, RenderTask } from './types';
+import type { ToWorkerMessage, RenderTask, RecolorTask } from './types';
 import { PALETTES, PALETTE_SIZE, samplePaletteData } from './colorPalettes';
 
 // ─── WASM glue ────────────────────────────────────────────────────────────────
@@ -94,17 +96,54 @@ function computeTileJS(
   }
 }
 
+// ─── Per-tile iteration data cache ────────────────────────────────────────────
+// Keyed by `${tileX},${tileY}`. Cleared when main thread sends clearCache.
+
+const iterCache = new Map<string, Float32Array>();
+
+// ─── Colorization ─────────────────────────────────────────────────────────────
+
+function applyColorization(
+  iterBuf: Float32Array,
+  size: number,
+  palette: number,
+  colorSpeed: number,
+  colorOffset: number
+): Uint8ClampedArray {
+  const paletteData = PALETTES[palette].data;
+  const rgba = new Uint8ClampedArray(size * 4);
+
+  for (let i = 0; i < size; i++) {
+    const val = iterBuf[i];
+    if (val < 0) {
+      // Interior — black; alpha is set on the next line
+      rgba[i * 4 + 3] = 255;
+      continue;
+    }
+    const t = ((val * colorSpeed * 0.01 + colorOffset) % 1 + 1) % 1;
+    const fIdx = t * PALETTE_SIZE;
+    const idx0 = Math.floor(fIdx) % PALETTE_SIZE;
+    const idx1 = (idx0 + 1) % PALETTE_SIZE;
+    const frac = fIdx - idx0;
+    const b0 = idx0 * 4;
+    const b1 = idx1 * 4;
+    const o = i * 4;
+    rgba[o]     = (paletteData[b0]     + (paletteData[b1]     - paletteData[b0])     * frac) | 0;
+    rgba[o + 1] = (paletteData[b0 + 1] + (paletteData[b1 + 1] - paletteData[b0 + 1]) * frac) | 0;
+    rgba[o + 2] = (paletteData[b0 + 2] + (paletteData[b1 + 2] - paletteData[b0 + 2]) * frac) | 0;
+    rgba[o + 3] = 255;
+  }
+  return rgba;
+}
+
 // ─── Tile rendering ───────────────────────────────────────────────────────────
 
 let _jsBuf: Float32Array | null = null;
 
 function renderTile(task: RenderTask): ArrayBuffer {
-  const { tileW, tileH, xMin, yMin, xMax, yMax, maxIter,
+  const { tileX, tileY, tileW, tileH, xMin, yMin, xMax, yMax, maxIter,
           juliaRe, juliaIm, isJulia, palette, colorSpeed, colorOffset } = task;
   const size = tileW * tileH;
-
-  const paletteData = PALETTES[palette].data;
-  const rgba = new Uint8ClampedArray(size * 4);
 
   let iterBuf: Float32Array;
 
@@ -136,18 +175,18 @@ function renderTile(task: RenderTask): ArrayBuffer {
     iterBuf = _jsBuf;
   }
 
-  // ── Color mapping ──────────────────────────────────────────────────────────
-  for (let i = 0; i < size; i++) {
-    const val = iterBuf[i];
-    const [r, g, b] = samplePaletteData(paletteData, val, colorSpeed, colorOffset);
-    const o = i * 4;
-    rgba[o]     = r;
-    rgba[o + 1] = g;
-    rgba[o + 2] = b;
-    rgba[o + 3] = 255;
-  }
+  // Cache a copy of the iteration data for fast recoloring later
+  iterCache.set(`${tileX},${tileY}`, iterBuf.slice(0));
 
-  return rgba.buffer;
+  return applyColorization(iterBuf, size, palette, colorSpeed, colorOffset).buffer as ArrayBuffer;
+}
+
+function recolorTile(task: RecolorTask): ArrayBuffer | null {
+  const key = `${task.tileX},${task.tileY}`;
+  const iterBuf = iterCache.get(key);
+  if (!iterBuf) return null;
+  const size = task.tileW * task.tileH;
+  return applyColorization(iterBuf, size, task.palette, task.colorSpeed, task.colorOffset).buffer as ArrayBuffer;
 }
 
 // ─── Message handler ──────────────────────────────────────────────────────────
@@ -161,6 +200,11 @@ self.onmessage = async (e: MessageEvent<ToWorkerMessage>) => {
     return;
   }
 
+  if (msg.type === 'clearCache') {
+    iterCache.clear();
+    return;
+  }
+
   if (msg.type === 'render') {
     const buf = renderTile(msg);
     // Transfer buffer ownership back to main thread (zero-copy)
@@ -168,6 +212,26 @@ self.onmessage = async (e: MessageEvent<ToWorkerMessage>) => {
       {
         type: 'result',
         taskId: msg.taskId,
+        gen: msg.gen,
+        tileX: msg.tileX,
+        tileY: msg.tileY,
+        tileW: msg.tileW,
+        tileH: msg.tileH,
+        imageData: buf,
+      },
+      [buf]
+    );
+    return;
+  }
+
+  if (msg.type === 'recolor') {
+    const buf = recolorTile(msg);
+    if (!buf) return; // no cached data — silently skip
+    (self as unknown as Worker).postMessage(
+      {
+        type: 'result',
+        taskId: msg.taskId,
+        gen: msg.gen,
         tileX: msg.tileX,
         tileY: msg.tileY,
         tileW: msg.tileW,
@@ -179,4 +243,4 @@ self.onmessage = async (e: MessageEvent<ToWorkerMessage>) => {
   }
 };
 
-export { PALETTE_SIZE };
+export { PALETTE_SIZE, samplePaletteData };

@@ -120,7 +120,7 @@ export const PALETTES: PaletteDef[] = [
 export function samplePalette(
   palette: PaletteDef,
   val: number,
-  maxIter: number,
+  _maxIter: number,
   colorSpeed: number,
   colorOffset: number
 ): [number, number, number] {
@@ -128,10 +128,18 @@ export function samplePalette(
 
   // Map to palette index with speed and offset
   const t = ((val * colorSpeed * 0.01 + colorOffset) % 1 + 1) % 1;
-  const idx = Math.floor(t * PALETTE_SIZE) % PALETTE_SIZE;
-  const base = idx * 4;
+  const fIdx = t * PALETTE_SIZE;
+  const idx0 = Math.floor(fIdx) % PALETTE_SIZE;
+  const idx1 = (idx0 + 1) % PALETTE_SIZE;
+  const frac = fIdx - idx0;
   const d = palette.data;
-  return [d[base], d[base + 1], d[base + 2]];
+  const b0 = idx0 * 4;
+  const b1 = idx1 * 4;
+  return [
+    (d[b0]     + (d[b1]     - d[b0])     * frac) | 0,
+    (d[b0 + 1] + (d[b1 + 1] - d[b0 + 1]) * frac) | 0,
+    (d[b0 + 2] + (d[b1 + 2] - d[b0 + 2]) * frac) | 0,
+  ];
 }
 
 /** Version used inside Web Workers (avoids importing PALETTES objects) */
@@ -143,7 +151,15 @@ export function samplePaletteData(
 ): [number, number, number] {
   if (val < 0) return [0, 0, 0];
   const t = ((val * colorSpeed * 0.01 + colorOffset) % 1 + 1) % 1;
-  const idx = Math.floor(t * PALETTE_SIZE) % PALETTE_SIZE;
-  const base = idx * 4;
-  return [data[base], data[base + 1], data[base + 2]];
+  const fIdx = t * PALETTE_SIZE;
+  const idx0 = Math.floor(fIdx) % PALETTE_SIZE;
+  const idx1 = (idx0 + 1) % PALETTE_SIZE;
+  const frac = fIdx - idx0;
+  const b0 = idx0 * 4;
+  const b1 = idx1 * 4;
+  return [
+    (data[b0]     + (data[b1]     - data[b0])     * frac) | 0,
+    (data[b0 + 1] + (data[b1 + 1] - data[b0 + 1]) * frac) | 0,
+    (data[b0 + 2] + (data[b1 + 2] - data[b0 + 2]) * frac) | 0,
+  ];
 }
