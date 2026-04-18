@@ -1,4 +1,4 @@
-import type { PaletteDef } from './types';
+import type {PaletteDef} from './types';
 
 export const PALETTE_SIZE = 4096;
 
@@ -54,18 +54,19 @@ const ultraFractalStops: Stop[] = [
 ];
 
 // ─── Palette 1 — Fire ─────────────────────────────────────────────────────────
-// Coal black → deep crimson → orange flame → bright yellow → white-hot
+// Coal black → deep crimson → orange flame → bright yellow → white-hot → coal black
 const fireStops: Stop[] = [
   [0.00, 0, 0, 0],
   [0.20, 80, 0, 0],
   [0.40, 200, 40, 0],
   [0.60, 255, 140, 0],
   [0.80, 255, 240, 50],
-  [1.00, 255, 255, 255],
+  [0.90, 255, 255, 255],
+  [1.00, 0, 0, 0],
 ];
 
 // ─── Palette 2 — Ocean Deep ───────────────────────────────────────────────────
-// Midnight abyss → navy → cobalt → cerulean → aqua → seafoam white
+// Midnight abyss → navy → cobalt → cerulean → aqua → seafoam white → midnight abyss
 const oceanStops: Stop[] = [
   [0.00, 0, 0, 20],
   [0.15, 0, 10, 80],
@@ -73,11 +74,12 @@ const oceanStops: Stop[] = [
   [0.55, 0, 180, 220],
   [0.75, 60, 230, 200],
   [0.90, 180, 255, 240],
-  [1.00, 240, 255, 255],
+  [0.95, 240, 255, 255],
+  [1.00, 0, 0, 20],
 ];
 
 // ─── Palette 3 — Electric Dreams ──────────────────────────────────────────────
-// Void black → deep violet → electric purple → magenta → hot pink → neon yellow → white
+// Void black → deep violet → electric purple → magenta → hot pink → neon yellow → white → void black
 const electricStops: Stop[] = [
   [0.00, 0, 0, 0],
   [0.12, 20, 0, 60],
@@ -86,7 +88,8 @@ const electricStops: Stop[] = [
   [0.60, 255, 0, 100],
   [0.75, 255, 200, 0],
   [0.88, 255, 255, 100],
-  [1.00, 255, 255, 255],
+  [0.95, 255, 255, 255],
+  [1.00, 0, 0, 0],
 ];
 
 // ─── Palette 4 — Monochrome Marble ────────────────────────────────────────────

@@ -5,8 +5,8 @@
  */
 
 import './style.css';
-import type { ViewState, RenderTask, RecolorTask, RenderResult, Bookmark } from './types';
-import { PALETTES } from './colorPalettes';
+import type {Bookmark, RecolorTask, RenderResult, RenderTask, ViewState} from './types';
+import {PALETTES} from './colorPalettes';
 
 // ─── Worker pool ──────────────────────────────────────────────────────────────
 
@@ -380,7 +380,8 @@ canvas.addEventListener('mouseleave', endDrag);
 
 canvas.addEventListener('wheel', (e) => {
   e.preventDefault();
-  const factor = e.deltaY > 0 ? 1.15 : 0.87;
+  // Use exponential factor for smooth high-resolution trackpad scrolling
+  const factor = Math.exp(e.deltaY * 0.002);
 
   // Update view coordinates without triggering a full re-render yet
   zoomAt(e.clientX, e.clientY, factor, false);
@@ -391,12 +392,17 @@ canvas.addEventListener('wheel', (e) => {
     const zoomX = e.clientX * dpr;
     const zoomY = e.clientY * dpr;
     const visualScale = 1 / factor;
+
+    // Accumulate the visual scale using the current canvas rather than static offscreen
+    const temp = new OffscreenCanvas(canvas.width, canvas.height);
+    temp.getContext('2d')!.drawImage(canvas, 0, 0);
+
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.save();
     ctx.translate(zoomX, zoomY);
     ctx.scale(visualScale, visualScale);
     ctx.translate(-zoomX, -zoomY);
-    ctx.drawImage(offscreen, 0, 0);
+    ctx.drawImage(temp, 0, 0);
     ctx.restore();
   }
 
