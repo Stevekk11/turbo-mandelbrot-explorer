@@ -19,9 +19,8 @@
     <div style="flex:1"></div>
     <button id="julia-btn"     class="btn">🌀 <span class="btn-label">Julia Set</span></button>
     <button id="auto-zoom-btn" class="btn">🔭 <span class="btn-label">Auto Zoom</span></button>
-    <button id="color-anim-btn"class="btn">🎨 <span class="btn-label">Animate</span></button>
     <button id="reset-btn"     class="btn">🏠 <span class="btn-label">Reset</span></button>
-    <button id="screenshot-btn"class="btn btn-icon" title="Save PNG">📸</button>
+    <button id="screenshot-btn" class="btn btn-icon" title="Save PNG">📸</button>
     <button id="bookmark-btn"  class="btn btn-icon" title="Bookmark view">🔖</button>
     <button id="help-btn"      class="btn btn-icon" title="Keyboard shortcuts">?</button>
     <button id="settings-toggle" class="btn">⚙️ <span class="btn-label">Settings</span></button>
@@ -60,18 +59,34 @@
 
     <!-- Palette -->
     <div class="section-title">🎨 Color Palette</div>
-    <select id="palette-select">
-      <option value="0">🌌 Ultra Fractal</option>
-      <option value="1">🔥 Fire</option>
-      <option value="2">🌊 Ocean Deep</option>
-      <option value="3">⚡ Electric Dreams</option>
-      <option value="4">◐ Monochrome</option>
-    </select>
-
-    <label class="ctrl-label" style="margin-top:0.75rem">Color Speed</label>
-    <div class="ctrl-row">
-      <input id="speed-slider" type="range" min="0.5" max="20" step="0.5" value="3" />
-      <span class="ctrl-value">×<span id="speed-display">3</span></span>
+    <div>
+      <select id="palette-select"
+              class="block w-full bg-gray-700 border-none rounded text-sm px-2 py-1 focus:ring focus:ring-blue-500">
+        <option value="0">💎 Super 50</option>
+        <option value="1">🚀 Ultra Neon</option>
+        <option value="2">🌃 Cyberpunk</option>
+        <option value="3">🌌 Ultra Fractal</option>
+        <option value="4">🔥 Fire</option>
+        <option value="5">🌊 Ocean Deep</option>
+        <option value="6">◐ Monochrome</option>
+      </select>
+    </div>
+    <div>
+      <label class="block text-xs uppercase tracking-wider text-gray-400 mb-1">Orbit Trap Mode</label>
+      <select id="orbit-trap-select"
+              class="block w-full bg-gray-700 border-none rounded text-sm px-2 py-1 focus:ring focus:ring-blue-500">
+        <option value="0">Classic (Escape Time)</option>
+        <option value="1">Point Trap (Origin)</option>
+        <option value="2">Cross Trap (Axes)</option>
+      </select>
+    </div>
+    <div>
+      <label class="block text-xs uppercase tracking-wider text-gray-400 mb-1 flex justify-between">
+        <span>Color Speed</span>
+        <span id="speed-display">3</span>×
+      </label>
+      <input id="speed-slider" type="range" min="0.5" max="30" step="0.5" value="3"
+             class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"/>
     </div>
 
     <!-- Julia Set -->

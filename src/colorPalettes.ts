@@ -1,6 +1,6 @@
 import type {PaletteDef} from './types';
 
-export const PALETTE_SIZE = 4096;
+export const PALETTE_SIZE = 8192;
 
 /** [position 0‒1, r, g, b] */
 type Stop = [number, number, number, number];
@@ -43,13 +43,17 @@ function buildPalette(stops: Stop[]): Uint8ClampedArray {
 }
 
 // ─── Palette 0 — Ultra Fractal Classic ────────────────────────────────────────
-// The timeless fractal coloring: black → cobalt → azure → cyan → white → gold → orange → crimson → black
+// Rich gradient: black → cobalt → azure → cyan → white → gold → orange → crimson → black
 const ultraFractalStops: Stop[] = [
   [0.00, 0, 7, 100],
-  [0.16, 32, 107, 203],
-  [0.42, 237, 255, 255],
-  [0.6425, 255, 170, 0],
-  [0.8575, 0, 2, 0],
+  [0.10, 15, 40, 150],
+  [0.20, 32, 107, 203],
+  [0.35, 100, 200, 255],
+  [0.50, 237, 255, 255],
+  [0.65, 255, 200, 50],
+  [0.75, 255, 140, 0],
+  [0.85, 200, 40, 0],
+  [0.93, 80, 10, 0],
   [1.00, 0, 7, 100],
 ];
 
@@ -57,11 +61,15 @@ const ultraFractalStops: Stop[] = [
 // Coal black → deep crimson → orange flame → bright yellow → white-hot → coal black
 const fireStops: Stop[] = [
   [0.00, 0, 0, 0],
+  [0.10, 40, 0, 0],
   [0.20, 80, 0, 0],
-  [0.40, 200, 40, 0],
-  [0.60, 255, 140, 0],
-  [0.80, 255, 240, 50],
-  [0.90, 255, 255, 255],
+  [0.32, 150, 20, 0],
+  [0.45, 200, 40, 0],
+  [0.58, 255, 100, 0],
+  [0.70, 255, 160, 0],
+  [0.82, 255, 200, 50],
+  [0.90, 255, 240, 100],
+  [0.95, 255, 255, 255],
   [1.00, 0, 0, 0],
 ];
 
@@ -69,28 +77,32 @@ const fireStops: Stop[] = [
 // Midnight abyss → navy → cobalt → cerulean → aqua → seafoam white → midnight abyss
 const oceanStops: Stop[] = [
   [0.00, 0, 0, 20],
+  [0.08, 0, 5, 50],
   [0.15, 0, 10, 80],
+  [0.25, 0, 30, 130],
   [0.35, 0, 60, 180],
+  [0.45, 0, 120, 200],
   [0.55, 0, 180, 220],
+  [0.65, 30, 210, 220],
   [0.75, 60, 230, 200],
-  [0.90, 180, 255, 240],
+  [0.85, 140, 245, 220],
   [0.95, 240, 255, 255],
   [1.00, 0, 0, 20],
 ];
 
-// ─── Palette 3 — Electric Dreams ──────────────────────────────────────────────
-// Void black → deep violet → electric purple → magenta → hot pink → neon yellow → white → void black
-const electricStops: Stop[] = [
+// ─── Palette 7 — Cyberpunk Neon ───────────────────────────────────────────────
+// Dark → hot pink → cyan → lime → magenta → back to dark
+const cyberpunkStops: Stop[] = [
   [0.00, 0, 0, 0],
-  [0.12, 20, 0, 60],
-  [0.28, 90, 0, 200],
-  [0.45, 200, 0, 200],
-  [0.60, 255, 0, 100],
-  [0.75, 255, 200, 0],
-  [0.88, 255, 255, 100],
-  [0.95, 255, 255, 255],
+  [0.12, 100, 0, 100],
+  [0.25, 255, 0, 150],
+  [0.40, 0, 255, 255],
+  [0.55, 50, 255, 50],
+  [0.70, 255, 0, 200],
+  [0.85, 200, 100, 255],
   [1.00, 0, 0, 0],
 ];
+
 
 // ─── Palette 4 — Monochrome Marble ────────────────────────────────────────────
 // Smooth sinusoidal black/white oscillation — clean, elegant
@@ -108,11 +120,85 @@ function buildMonochrome(): Uint8ClampedArray {
   return data;
 }
 
+// ─── Palette 11 — Ultra Neon (RGB + Cyberpunk) ────────────────────────────────
+// Combines full spectrum with neon highlights for maximum visual impact
+const ultraNeonStops: Stop[] = [
+  [0.00, 0, 0, 0],
+  [0.08, 255, 0, 127],  // Hot Pink
+  [0.18, 0, 0, 255],    // Pure Blue
+  [0.28, 0, 255, 255],  // Cyan
+  [0.38, 0, 255, 0],    // Lime Green
+  [0.48, 255, 255, 0],  // Neon Yellow
+  [0.58, 255, 127, 0],  // Orange
+  [0.68, 255, 0, 0],    // Red
+  [0.78, 255, 0, 255],  // Magenta
+  [0.88, 127, 0, 255],  // Electric Violet
+  [0.95, 255, 255, 255],// White-hot
+  [1.00, 0, 0, 0],
+];
+
+// ─── Palette 12 — Super 50 ───────────────────────────────────────────────────
+// A massive 50-stop palette for extreme detail and color density
+const super50Stops: Stop[] = [
+  [0.00, 0, 0, 0],   // Black
+  [0.02, 20, 0, 50],   // Deep Night
+  [0.04, 40, 0, 100],   // Navy
+  [0.06, 60, 10, 150],   // Indigo
+  [0.08, 80, 20, 200],   // Royal
+  [0.10, 100, 40, 255],   // Electric Blue
+  [0.12, 50, 80, 255],   // Sky
+  [0.14, 0, 120, 255],   // Azure
+  [0.16, 0, 160, 240],   // Deep Cyan
+  [0.18, 0, 200, 220],   // Turquoise
+  [0.20, 0, 255, 180],   // Mint
+  [0.22, 0, 255, 100],   // Spring
+  [0.24, 0, 255, 0],   // Lime
+  [0.26, 80, 255, 0],   // Chartreuse
+  [0.28, 160, 255, 0],   // Bright Green
+  [0.30, 220, 255, 0],   // Yellow-Green
+  [0.32, 255, 255, 0],   // Yellow
+  [0.34, 255, 220, 0],   // Golden
+  [0.36, 255, 180, 0],   // Amber
+  [0.38, 255, 140, 0],   // Orange
+  [0.40, 255, 100, 0],   // Deep Orange
+  [0.42, 255, 60, 0],   // Orange-Red
+  [0.44, 255, 0, 0],   // Red
+  [0.46, 255, 0, 60],   // Crimson
+  [0.48, 255, 0, 120],   // Rose
+  [0.50, 255, 0, 180],   // Magenta
+  [0.52, 255, 0, 255],   // Fuchsia
+  [0.54, 200, 0, 255],   // Purple
+  [0.56, 150, 0, 255],   // Violet
+  [0.58, 100, 0, 255],   // Deep Purple
+  [0.60, 50, 0, 255],   // Dark Violet
+  [0.62, 80, 50, 200],   // Twilight
+  [0.64, 110, 80, 180],   // Lavender
+  [0.66, 150, 120, 220],   // Pastel Purple
+  [0.68, 180, 160, 255],   // Periwinkle
+  [0.70, 200, 200, 255],   // Off White
+  [0.72, 255, 255, 255],   // White
+  [0.74, 255, 230, 230],   // Pinkish White
+  [0.76, 255, 200, 200],   // Soft Pink
+  [0.78, 255, 150, 150],   // Coral
+  [0.80, 255, 100, 100],   // Light Red
+  [0.82, 180, 50, 50],   // Maroon
+  [0.84, 120, 20, 20],   // Dark Red
+  [0.86, 80, 10, 10],   // Blood
+  [0.88, 40, 5, 5],   // Deep Maroon
+  [0.90, 20, 20, 20],   // Gray
+  [0.92, 60, 60, 60],   // Light Gray
+  [0.94, 120, 120, 120],   // Silver
+  [0.96, 200, 200, 220],   // Steel
+  [1.00, 0, 0, 0],   // back to Black
+];
+
 export const PALETTES: PaletteDef[] = [
+  {name: 'Super 50', icon: '💎', data: buildPalette(super50Stops)},
+  {name: 'Ultra Neon', icon: '🚀', data: buildPalette(ultraNeonStops)},
+  {name: 'Cyberpunk', icon: '🌃', data: buildPalette(cyberpunkStops)},
   { name: 'Ultra Fractal', icon: '🌌', data: buildPalette(ultraFractalStops) },
   { name: 'Fire',          icon: '🔥', data: buildPalette(fireStops) },
   { name: 'Ocean Deep',    icon: '🌊', data: buildPalette(oceanStops) },
-  { name: 'Electric',      icon: '⚡', data: buildPalette(electricStops) },
   { name: 'Monochrome',    icon: '◐',  data: buildMonochrome() },
 ];
 

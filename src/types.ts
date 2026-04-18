@@ -14,6 +14,8 @@ export interface ViewState {
   palette: number;
   /** Color cycle speed multiplier */
   colorSpeed: number;
+  /** Color offset for animation */
+  colorOffset: number;
   /** Julia mode active */
   isJulia: boolean;
   /** Julia constant (real part) */
@@ -22,8 +24,7 @@ export interface ViewState {
   juliaIm: number;
   /** Current zoom level (derived, for display) */
   zoom: number;
-  /** Color offset for animation */
-  colorOffset: number;
+  orbitTrapMode: number;
 }
 
 /** Message sent to a worker requesting tile rendering */
@@ -43,12 +44,19 @@ export interface RenderTask {
   xMax: number;
   yMax: number;
   maxIter: number;
+  /** Julia constant (real part) */
   juliaRe: number;
+  /** Julia constant (imaginary part) */
   juliaIm: number;
+  /** Julia mode active */
   isJulia: boolean;
+  /** Active color palette index (0‒4) */
   palette: number;
+  /** Color cycle speed multiplier */
   colorSpeed: number;
+  /** Color offset for animation */
   colorOffset: number;
+  orbitTrapMode: number;
 }
 
 /** Message sent to a worker to recolor a cached tile without recomputing the fractal */
@@ -118,4 +126,5 @@ export interface Bookmark {
   isJulia: boolean;
   juliaRe: number;
   juliaIm: number;
+  orbitTrapMode: number;
 }

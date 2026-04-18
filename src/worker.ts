@@ -7,8 +7,8 @@
  * without recomputing the fractal (recolor task).
  */
 
-import type { ToWorkerMessage, RenderTask, RecolorTask } from './types';
-import { PALETTES, PALETTE_SIZE, samplePaletteData } from './colorPalettes';
+import type {RecolorTask, RenderTask, ToWorkerMessage} from './types';
+import {PALETTE_SIZE, PALETTES, samplePaletteData} from './colorPalettes';
 
 // ─── WASM glue ────────────────────────────────────────────────────────────────
 
@@ -19,7 +19,7 @@ interface MandelbrotWasm {
     computeTile: (
       xMin: number, yMin: number, xMax: number, yMax: number,
       width: number, height: number, maxIter: number,
-      juliaRe: number, juliaIm: number, isJulia: number
+      juliaRe: number, juliaIm: number, isJulia: number, orbitTrapMode: number
     ) => void;
     getBufferSize: () => number;
   };
@@ -54,7 +54,7 @@ async function loadWasm(url: string): Promise<void> {
 function computeTileJS(
   xMin: number, yMin: number, xMax: number, yMax: number,
   width: number, height: number, maxIter: number,
-  juliaRe: number, juliaIm: number, isJulia: boolean,
+  juliaRe: number, juliaIm: number, isJulia: boolean, orbitTrapMode: number,
   buf: Float32Array
 ): void {
   const dx = (xMax - xMin) / width;
@@ -73,17 +73,30 @@ function computeTileJS(
       let iter = 0;
       let x2 = zRe * zRe;
       let y2 = zIm * zIm;
+      let minDist = 1e20;
 
-      while (x2 + y2 <= 4.0 && iter < maxIter) {
+      while (x2 + y2 <= 100000.0 && iter < maxIter) {
         zIm = 2.0 * zRe * zIm + cIm;
         zRe = x2 - y2 + cRe;
         x2 = zRe * zRe;
         y2 = zIm * zIm;
         iter++;
+
+        if (orbitTrapMode > 0) {
+          let dist = 1e20;
+          if (orbitTrapMode === 1) {
+            dist = Math.sqrt(x2 + y2);
+          } else if (orbitTrapMode === 2) {
+            dist = Math.abs(zRe * zIm);
+          }
+          if (dist < minDist) minDist = dist;
+        }
       }
 
       let val: number;
-      if (iter >= maxIter) {
+      if (orbitTrapMode > 0) {
+        val = minDist < 1e19 ? Math.log(minDist + 1e-10) * -10.0 : -1.0;
+      } else if (iter >= maxIter) {
         val = -1.0;
       } else {
         const log_zn = Math.log(x2 + y2) * 0.5;
@@ -142,7 +155,8 @@ let _jsBuf: Float32Array | null = null;
 
 function renderTile(task: RenderTask): ArrayBuffer {
   const { tileX, tileY, tileW, tileH, xMin, yMin, xMax, yMax, maxIter,
-          juliaRe, juliaIm, isJulia, palette, colorSpeed, colorOffset } = task;
+    juliaRe, juliaIm, isJulia, palette, colorSpeed, colorOffset, orbitTrapMode
+  } = task;
   const size = tileW * tileH;
 
   let iterBuf: Float32Array;
@@ -153,7 +167,7 @@ function renderTile(task: RenderTask): ArrayBuffer {
     wasmInstance.exports.computeTile(
       xMin, yMin, xMax, yMax,
       tileW, tileH, maxIter,
-      juliaRe, juliaIm, isJulia ? 1 : 0
+        juliaRe, juliaIm, isJulia ? 1 : 0, orbitTrapMode || 0
     );
     // Read results directly from WASM linear memory
     iterBuf = new Float32Array(
@@ -169,7 +183,7 @@ function renderTile(task: RenderTask): ArrayBuffer {
     computeTileJS(
       xMin, yMin, xMax, yMax,
       tileW, tileH, maxIter,
-      juliaRe, juliaIm, isJulia,
+        juliaRe, juliaIm, isJulia, orbitTrapMode || 0,
       _jsBuf
     );
     iterBuf = _jsBuf;

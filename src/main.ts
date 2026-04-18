@@ -28,14 +28,15 @@ function createWorkerPool(wasmUrl: string) {
 const DEFAULT_VIEW: ViewState = {
   xMin: -2.5, xMax: 1.0,
   yMin: -1.25, yMax: 1.25,
-  maxIter: 256,
+  maxIter: 1000,
   palette: 0,
   colorSpeed: 3,
-  colorOffset: 0,
+  colorOffset: 0.35,
   isJulia: false,
   juliaRe: -0.7269,
   juliaIm: 0.1889,
   zoom: 1,
+  orbitTrapMode: 0,
 };
 
 let view: ViewState = { ...DEFAULT_VIEW };
@@ -61,6 +62,57 @@ const tileWorkerMap = new Map<string, number>();
 
 // Tracks how many recolor tiles are still pending for the current recolorGen
 let pendingRecolorTiles = 0;
+
+let renderSnapshot: OffscreenCanvas | null = null;
+let activeTiles: { canvas: OffscreenCanvas, x: number, y: number, startTime: number }[] = [];
+let fadeRaf = 0;
+let activeTilesGen = 0;
+let activeTilesIsRecolor = false;
+
+function startTileAnimation(gen: number, isRecolor: boolean) {
+  if (autoZoomActive || colorAnimActive) return;
+  renderSnapshot = new OffscreenCanvas(canvas.width, canvas.height);
+  renderSnapshot.getContext('2d')!.drawImage(canvas, 0, 0);
+  activeTiles = [];
+  activeTilesGen = gen;
+  activeTilesIsRecolor = isRecolor;
+  if (fadeRaf) cancelAnimationFrame(fadeRaf);
+  fadeRaf = requestAnimationFrame(animateTiles);
+}
+
+function animateTiles() {
+  const currentGen = activeTilesIsRecolor ? recolorGen : renderGen;
+  if (activeTilesGen !== currentGen) return;
+  if (isDragging || wheelTimer !== null) return;
+
+  if (!renderSnapshot) return;
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(renderSnapshot, 0, 0);
+
+  const now = performance.now();
+  let allDone = true;
+
+  for (const t of activeTiles) {
+    let alpha = (now - t.startTime) / 250;
+    if (alpha >= 1.0) alpha = 1.0;
+    else allDone = false;
+
+    ctx.globalAlpha = alpha;
+    ctx.drawImage(t.canvas, t.x, t.y);
+  }
+  ctx.globalAlpha = 1.0;
+
+  const receivedAll = activeTilesIsRecolor
+      ? (pendingRecolorTiles === 0)
+      : (completedTiles >= totalTiles);
+
+  if (receivedAll && allDone) {
+    if (offscreen) ctx.drawImage(offscreen, 0, 0);
+  } else {
+    fadeRaf = requestAnimationFrame(animateTiles);
+  }
+}
 
 // ─── Canvas setup ─────────────────────────────────────────────────────────────
 
@@ -145,6 +197,7 @@ function scheduleRender() {
         palette: view.palette,
         colorSpeed: view.colorSpeed,
         colorOffset: view.colorOffset,
+        orbitTrapMode: view.orbitTrapMode,
       };
       taskQueue.push({ task, gen });
     }
@@ -153,6 +206,8 @@ function scheduleRender() {
   pendingTiles = totalTiles;
   isRendering = true;
   updateProgressBar(0);
+
+  startTileAnimation(gen, false);
 
   // Dispatch to idle workers
   dispatchTasks();
@@ -197,6 +252,8 @@ function handleWorkerMessage(e: MessageEvent) {
     const isCurrentRender  = result.gen === renderGen;
     const isCurrentRecolor = result.gen === recolorGen;
 
+    const shouldAnimate = !autoZoomActive && !colorAnimActive;
+
     if ((isCurrentRender || isCurrentRecolor) && offCtx && offscreen) {
       const imgData = new ImageData(
         new Uint8ClampedArray(result.imageData),
@@ -204,8 +261,20 @@ function handleWorkerMessage(e: MessageEvent) {
         result.tileH
       );
       offCtx.putImageData(imgData, result.tileX, result.tileY);
-      // Blit offscreen to visible canvas
-      ctx.drawImage(offscreen, 0, 0);
+
+      if (shouldAnimate && activeTilesGen === (isCurrentRender ? renderGen : recolorGen)) {
+        const tileCanvas = new OffscreenCanvas(result.tileW, result.tileH);
+        tileCanvas.getContext('2d')!.putImageData(imgData, 0, 0);
+        activeTiles.push({
+          canvas: tileCanvas,
+          x: result.tileX,
+          y: result.tileY,
+          startTime: performance.now()
+        });
+      } else {
+        // Blit offscreen to visible canvas immediately
+        ctx.drawImage(offscreen, 0, 0);
+      }
     }
 
     if (isCurrentRender) {
@@ -277,6 +346,7 @@ function scheduleRecolor() {
   }
 
   pendingRecolorTiles = count;
+  startTileAnimation(gen, true);
 }
 
 function zoomAt(screenX: number, screenY: number, factor: number, rerender = true) {
@@ -577,6 +647,30 @@ function updatePaletteUI() {
   if (sel) sel.value = String(view.palette);
 }
 
+// ─── Orbit Trap Mode ──────────────────────────────────────────────────────────
+
+const ORBIT_TRAP_MODES = [
+  {label: 'None', value: 0},
+  {label: 'Celtic', value: 1},
+  {label: 'Spiral', value: 2},
+  {label: 'Square', value: 3},
+];
+
+function updateOrbitTrapUI() {
+  const sel = document.getElementById('orbit-trap-select') as HTMLSelectElement;
+  if (!sel) return;
+
+  sel.innerHTML = ORBIT_TRAP_MODES.map(m => `
+    <option value="${m.value}" ${m.value === view.orbitTrapMode ? 'selected' : ''}>
+      ${m.label}
+    </option>
+  `).join('');
+}
+
+updateOrbitTrapUI();
+
+// ─── Screenshot ───────────────────────────────────────────────────────────────
+
 function saveScreenshot() {
   const link = document.createElement('a');
   link.download = `mandelbrot-${Date.now()}.png`;
@@ -701,6 +795,13 @@ function initSettingsPanel() {
     if (tileWorkerMap.size > 0) scheduleRecolor(); else scheduleRender();
   });
 
+  // Orbit Trap select
+  const orbitTrapSelect = document.getElementById('orbit-trap-select') as HTMLSelectElement;
+  orbitTrapSelect.addEventListener('change', () => {
+    view.orbitTrapMode = parseInt(orbitTrapSelect.value);
+    scheduleRender();
+  });
+
   // Color speed slider
   const speedSlider = document.getElementById('speed-slider') as HTMLInputElement;
   speedSlider.value = String(view.colorSpeed);
@@ -758,11 +859,71 @@ function initToolbar() {
 // ─── Bookmarks ────────────────────────────────────────────────────────────────
 
 const BUILT_IN_BOOKMARKS: Bookmark[] = [
-  { label: '🏠 Home',         xMin: -2.5,  xMax: 1.0,    yMin: -1.25,  yMax: 1.25,   maxIter: 256,  palette: 0, isJulia: false, juliaRe: -0.7269, juliaIm: 0.1889 },
-  { label: '🦐 Seahorse',     xMin: -0.76, xMax: -0.72,  yMin: 0.17,   yMax: 0.21,   maxIter: 512,  palette: 2, isJulia: false, juliaRe: -0.7269, juliaIm: 0.1889 },
-  { label: '🐘 Elephant',     xMin: 0.24,  xMax: 0.28,   yMin: -0.01,  yMax: 0.02,   maxIter: 512,  palette: 3, isJulia: false, juliaRe: -0.7269, juliaIm: 0.1889 },
-  { label: '🌀 Spiral',       xMin: -0.748, xMax: -0.740, yMin: 0.100, yMax: 0.107,  maxIter: 1024, palette: 1, isJulia: false, juliaRe: -0.7269, juliaIm: 0.1889 },
-  { label: '⚡ Julia Orbit',  xMin: -1.5,  xMax: 1.5,    yMin: -1.0,   yMax: 1.0,    maxIter: 256,  palette: 3, isJulia: true,  juliaRe: -0.7269, juliaIm: 0.1889 },
+  {
+    label: '🏠 Home',
+    xMin: -2.5,
+    xMax: 1.0,
+    yMin: -1.25,
+    yMax: 1.25,
+    maxIter: 256,
+    palette: 3,
+    isJulia: false,
+    juliaRe: -0.7269,
+    juliaIm: 0.1889,
+    orbitTrapMode: 0
+  },
+  {
+    label: '🦐 Seahorse',
+    xMin: -0.76,
+    xMax: -0.72,
+    yMin: 0.17,
+    yMax: 0.21,
+    maxIter: 512,
+    palette: 5,
+    isJulia: false,
+    juliaRe: -0.7269,
+    juliaIm: 0.1889,
+    orbitTrapMode: 0
+  },
+  {
+    label: '🐘 Elephant',
+    xMin: 0.24,
+    xMax: 0.28,
+    yMin: -0.01,
+    yMax: 0.02,
+    maxIter: 512,
+    palette: 1,
+    isJulia: false,
+    juliaRe: -0.7269,
+    juliaIm: 0.1889,
+    orbitTrapMode: 0
+  },
+  {
+    label: '🌀 Spiral',
+    xMin: -0.748,
+    xMax: -0.740,
+    yMin: 0.100,
+    yMax: 0.107,
+    maxIter: 1024,
+    palette: 4,
+    isJulia: false,
+    juliaRe: -0.7269,
+    juliaIm: 0.1889,
+    orbitTrapMode: 0
+  },
+  {
+    label: '⚡ Julia Orbit',
+    xMin: -1.5,
+    xMax: 1.5,
+    yMin: -1.0,
+    yMax: 1.0,
+    maxIter: 256,
+    palette: 1,
+    isJulia: true,
+    juliaRe: -0.7269,
+    juliaIm: 0.1889,
+    orbitTrapMode: 0
+  },
 ];
 
 function loadBookmarks(): Bookmark[] {
@@ -791,7 +952,12 @@ function applyBookmark(bm: Bookmark) {
   view.isJulia = bm.isJulia;
   view.juliaRe = bm.juliaRe;
   view.juliaIm = bm.juliaIm;
+  view.orbitTrapMode = bm.orbitTrapMode || 0;
   updateZoom(); updateIterDisplay(); updatePaletteUI();
+
+  const orbitTrapSelect = document.getElementById('orbit-trap-select') as HTMLSelectElement;
+  if (orbitTrapSelect) orbitTrapSelect.value = String(view.orbitTrapMode);
+  
   scheduleRender();
 }
 
