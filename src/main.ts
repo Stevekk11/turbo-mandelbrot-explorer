@@ -504,7 +504,12 @@ canvas.addEventListener('touchstart', (e) => {
     renderGen++;
   } else if (e.touches.length === 2) {
     isDragging = false;
-    panSource = null;
+
+      // Snapshot the current canvas for pinch visual feedback
+      panSource = new OffscreenCanvas(canvas.width, canvas.height);
+      const psCtx = panSource.getContext('2d') as OffscreenCanvasRenderingContext2D;
+      psCtx.drawImage(canvas, 0, 0);
+
     lastTouchDist = Math.hypot(
       e.touches[1].clientX - e.touches[0].clientX,
       e.touches[1].clientY - e.touches[0].clientY
@@ -538,7 +543,7 @@ canvas.addEventListener('touchmove', (e) => {
     const my = (e.touches[0].clientY + e.touches[1].clientY) / 2;
     zoomAt(mx, my, factor, false);
 
-    if (offscreen) {
+      if (panSource) {
       const dpr = window.devicePixelRatio || 1;
       const zoomX = mx * dpr;
       const zoomY = my * dpr;
@@ -548,7 +553,7 @@ canvas.addEventListener('touchmove', (e) => {
       ctx.translate(zoomX, zoomY);
       ctx.scale(visualScale, visualScale);
       ctx.translate(-zoomX, -zoomY);
-      ctx.drawImage(offscreen, 0, 0);
+          ctx.drawImage(panSource, 0, 0);
       ctx.restore();
     }
 
@@ -558,8 +563,14 @@ canvas.addEventListener('touchmove', (e) => {
   }
 }, { passive: false });
 
-canvas.addEventListener('touchend', () => {
-  if (isDragging) endDrag();
+canvas.addEventListener('touchend', (e) => {
+    if (isDragging) {
+        endDrag();
+    } else if (e.touches.length === 0) {
+        // End of pinch
+        lastTouchDist = 0;
+        scheduleRender();
+    }
 });
 
 // ─── Keyboard shortcuts ───────────────────────────────────────────────────────
