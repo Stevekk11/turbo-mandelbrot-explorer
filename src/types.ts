@@ -1,13 +1,13 @@
 /** Fractal view state – the complete representation of "where we are" */
 export interface ViewState {
   /** Left edge in fractal coordinates */
-  xMin: number;
+  xMin: string;
   /** Right edge in fractal coordinates */
-  xMax: number;
+  xMax: string;
   /** Top edge in fractal coordinates */
-  yMin: number;
+  yMin: string;
   /** Bottom edge in fractal coordinates */
-  yMax: number;
+  yMax: string;
   /** Maximum iteration count */
   maxIter: number;
   /** Active color palette index (0‒4) */
@@ -19,11 +19,11 @@ export interface ViewState {
   /** Julia mode active */
   isJulia: boolean;
   /** Julia constant (real part) */
-  juliaRe: number;
+  juliaRe: string;
   /** Julia constant (imaginary part) */
-  juliaIm: number;
+  juliaIm: string;
   /** Current zoom level (derived, for display) */
-  zoom: number;
+  zoom: string;
   orbitTrapMode: number;
 }
 
@@ -39,15 +39,15 @@ export interface RenderTask {
   tileW: number;
   tileH: number;
   /** Fractal coordinate bounds for this tile */
-  xMin: number;
-  yMin: number;
-  xMax: number;
-  yMax: number;
+  xMin: string;
+  yMin: string;
+  xMax: string;
+  yMax: string;
   maxIter: number;
   /** Julia constant (real part) */
-  juliaRe: number;
+  juliaRe: string;
   /** Julia constant (imaginary part) */
-  juliaIm: number;
+  juliaIm: string;
   /** Julia mode active */
   isJulia: boolean;
   /** Active color palette index (0‒4) */
@@ -117,14 +117,14 @@ export interface PaletteDef {
 /** Bookmarked location */
 export interface Bookmark {
   label: string;
-  xMin: number;
-  xMax: number;
-  yMin: number;
-  yMax: number;
+  xMin: string;
+  xMax: string;
+  yMin: string;
+  yMax: string;
   maxIter: number;
   palette: number;
   isJulia: boolean;
-  juliaRe: number;
-  juliaIm: number;
+  juliaRe: string;
+  juliaIm: string;
   orbitTrapMode: number;
 }

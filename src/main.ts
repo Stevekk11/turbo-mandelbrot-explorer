@@ -7,6 +7,7 @@
 import './style.css';
 import type {Bookmark, RecolorTask, RenderResult, RenderTask, ViewState} from './types';
 import {PALETTES} from './colorPalettes';
+import Decimal from 'decimal.js';
 
 // ─── Worker pool ──────────────────────────────────────────────────────────────
 
@@ -26,16 +27,16 @@ function createWorkerPool(wasmUrl: string) {
 // ─── Application state ────────────────────────────────────────────────────────
 
 const DEFAULT_VIEW: ViewState = {
-  xMin: -2.5, xMax: 1.0,
-  yMin: -1.25, yMax: 1.25,
+  xMin: '-2.5', xMax: '1.0',
+  yMin: '-1.25', yMax: '1.25',
   maxIter: 1000,
   palette: 0,
   colorSpeed: 3,
   colorOffset: 0.35,
   isJulia: false,
-  juliaRe: -0.7269,
-  juliaIm: 0.1889,
-  zoom: 1,
+  juliaRe: '-0.7269',
+  juliaIm: '0.1889',
+  zoom: '1',
   orbitTrapMode: 0,
 };
 
@@ -135,12 +136,14 @@ function resizeCanvas() {
 
   // Keep aspect ratio correct by adjusting Y range
   const aspect = canvas.width / canvas.height;
-  const cx = (view.xMin + view.xMax) / 2;
-  const cy = (view.yMin + view.yMax) / 2;
-  const xRange = view.xMax - view.xMin;
-  const yRange = xRange / aspect;
-  view.yMin = cy - yRange / 2;
-  view.yMax = cy + yRange / 2;
+  const dXMin = new Decimal(view.xMin);
+  const dXMax = new Decimal(view.xMax);
+  const cx = dXMin.plus(dXMax).div(2);
+  const cy = new Decimal(view.yMin).plus(new Decimal(view.yMax)).div(2);
+  const xRange = dXMax.minus(dXMin);
+  const yRange = xRange.div(aspect);
+  view.yMin = cy.minus(yRange.div(2)).toString();
+  view.yMax = cy.plus(yRange.div(2)).toString();
 
   scheduleRender();
 }
@@ -170,8 +173,12 @@ function scheduleRender() {
   const rows = Math.ceil(ch / TILE_SIZE);
   totalTiles = cols * rows;
 
-  const xRange = view.xMax - view.xMin;
-  const yRange = view.yMax - view.yMin;
+  const dXMin = new Decimal(view.xMin);
+  const dXMax = new Decimal(view.xMax);
+  const dYMin = new Decimal(view.yMin);
+  const dYMax = new Decimal(view.yMax);
+  const xRange = dXMax.minus(dXMin);
+  const yRange = dYMax.minus(dYMin);
 
   let taskId = 0;
   for (let row = 0; row < rows; row++) {
@@ -186,10 +193,10 @@ function scheduleRender() {
         taskId: taskId++,
         gen,
         tileX, tileY, tileW, tileH,
-        xMin: view.xMin + (tileX / cw) * xRange,
-        yMin: view.yMin + (tileY / ch) * yRange,
-        xMax: view.xMin + ((tileX + tileW) / cw) * xRange,
-        yMax: view.yMin + ((tileY + tileH) / ch) * yRange,
+        xMin: dXMin.plus(new Decimal(tileX).div(cw).times(xRange)).toString(),
+        yMin: dYMin.plus(new Decimal(tileY).div(ch).times(yRange)).toString(),
+        xMax: dXMin.plus(new Decimal(tileX + tileW).div(cw).times(xRange)).toString(),
+        yMax: dYMin.plus(new Decimal(tileY + tileH).div(ch).times(yRange)).toString(),
         maxIter: view.maxIter,
         juliaRe: view.juliaRe,
         juliaIm: view.juliaIm,
@@ -301,9 +308,14 @@ function handleWorkerMessage(e: MessageEvent) {
 
 // ─── Coordinate utilities ─────────────────────────────────────────────────────
 
-function screenToFractal(sx: number, sy: number): [number, number] {
-  const fx = view.xMin + (sx / canvas.width)  * (view.xMax - view.xMin);
-  const fy = view.yMin + (sy / canvas.height) * (view.yMax - view.yMin);
+function screenToFractal(sx: number, sy: number): [Decimal, Decimal] {
+  const dXMin = new Decimal(view.xMin);
+  const dXMax = new Decimal(view.xMax);
+  const dYMin = new Decimal(view.yMin);
+  const dYMax = new Decimal(view.yMax);
+
+  const fx = dXMin.plus(new Decimal(sx).div(canvas.width).times(dXMax.minus(dXMin)));
+  const fy = dYMin.plus(new Decimal(sy).div(canvas.height).times(dYMax.minus(dYMin)));
   return [fx, fy];
 }
 
@@ -353,22 +365,30 @@ function scheduleRecolor() {
 
 function zoomAt(screenX: number, screenY: number, factor: number, rerender = true) {
   const [fx, fy] = screenToFractal(screenX * devicePixelRatio, screenY * devicePixelRatio);
-  const xRange = (view.xMax - view.xMin) * factor;
-  const yRange = (view.yMax - view.yMin) * factor;
-  view.xMin = fx - xRange * (screenX / canvas.clientWidth);
-  view.xMax = fx + xRange * (1 - screenX / canvas.clientWidth);
-  view.yMin = fy - yRange * (screenY / canvas.clientHeight);
-  view.yMax = fy + yRange * (1 - screenY / canvas.clientHeight);
+  const dXMin = new Decimal(view.xMin);
+  const dXMax = new Decimal(view.xMax);
+  const dYMin = new Decimal(view.yMin);
+  const dYMax = new Decimal(view.yMax);
+
+  const xRange = dXMax.minus(dXMin).times(factor);
+  const yRange = dYMax.minus(dYMin).times(factor);
+  view.xMin = fx.minus(xRange.times(screenX / canvas.clientWidth)).toString();
+  view.xMax = fx.plus(xRange.times(1 - screenX / canvas.clientWidth)).toString();
+  view.yMin = fy.minus(yRange.times(screenY / canvas.clientHeight)).toString();
+  view.yMax = fy.plus(yRange.times(1 - screenY / canvas.clientHeight)).toString();
   updateZoom();
   if (rerender) scheduleRender();
 }
 
 function updateZoom() {
-  const baseRange = 3.5; // default xMax - xMin
-  view.zoom = baseRange / (view.xMax - view.xMin);
+  const baseRange = new Decimal(3.5); // default xMax - xMin
+  const dXMin = new Decimal(view.xMin);
+  const dXMax = new Decimal(view.xMax);
+  const zoomD = baseRange.div(dXMax.minus(dXMin));
+  view.zoom = zoomD.toString();
   const zoomEl = document.getElementById('zoom-counter');
   if (zoomEl) {
-    const z = view.zoom;
+    const z = zoomD.toNumber();
     let label: string;
     if (z < 1000) label = `${z.toFixed(1)}×`;
     else if (z < 1e6) label = `${(z / 1000).toFixed(2)}K×`;

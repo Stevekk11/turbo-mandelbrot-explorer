@@ -9,6 +9,7 @@
 
 import type {RecolorTask, RenderTask, ToWorkerMessage} from './types';
 import {PALETTE_SIZE, PALETTES, samplePaletteData} from './colorPalettes';
+import Decimal from 'decimal.js';
 
 // ─── WASM glue ────────────────────────────────────────────────────────────────
 
@@ -52,13 +53,24 @@ async function loadWasm(url: string): Promise<void> {
 // ─── JavaScript fallback (if WASM unavailable) ────────────────────────────────
 
 function computeTileJS(
-  xMin: number, yMin: number, xMax: number, yMax: number,
+    xMinStr: string, yMinStr: string, xMaxStr: string, yMaxStr: string,
   width: number, height: number, maxIter: number,
-  juliaRe: number, juliaIm: number, isJulia: boolean, orbitTrapMode: number,
+    juliaReStr: string, juliaImStr: string, isJulia: boolean, orbitTrapMode: number,
   buf: Float32Array
 ): void {
+  const xMin = Number(xMinStr);
+  const yMin = Number(yMinStr);
+  const xMax = Number(xMaxStr);
+  const yMax = Number(yMaxStr);
   const dx = (xMax - xMin) / width;
   const dy = (yMax - yMin) / height;
+  const juliaRe = Number(juliaReStr);
+  const juliaIm = Number(juliaImStr);
+
+  if (xMax - xMin < 1e-14 || isNaN(dx)) {
+    computeTileDecimal(xMinStr, yMinStr, xMaxStr, yMaxStr, width, height, maxIter, juliaReStr, juliaImStr, isJulia, orbitTrapMode, buf);
+    return;
+  }
 
   for (let py = 0; py < height; py++) {
     const im = yMin + py * dy;
@@ -100,6 +112,72 @@ function computeTileJS(
         val = -1.0;
       } else {
         const log_zn = Math.log(x2 + y2) * 0.5;
+        const nu = Math.log(log_zn / Math.LN2) / Math.LN2;
+        val = iter + 1.0 - nu;
+      }
+
+      buf[py * width + px] = val;
+    }
+  }
+}
+
+function computeTileDecimal(
+    xMinStr: string, yMinStr: string, xMaxStr: string, yMaxStr: string,
+    width: number, height: number, maxIter: number,
+    juliaReStr: string, juliaImStr: string, isJulia: boolean, orbitTrapMode: number,
+    buf: Float32Array
+): void {
+  Decimal.set({precision: 40});
+  const dXMin = new Decimal(xMinStr);
+  const dYMin = new Decimal(yMinStr);
+  const dXMax = new Decimal(xMaxStr);
+  const dYMax = new Decimal(yMaxStr);
+  const dx = dXMax.minus(dXMin).div(width);
+  const dy = dYMax.minus(dYMin).div(height);
+  const cReD = new Decimal(juliaReStr);
+  const cImD = new Decimal(juliaImStr);
+
+  for (let py = 0; py < height; py++) {
+    const im = dYMin.plus(dy.times(py));
+    for (let px = 0; px < width; px++) {
+      const re = dXMin.plus(dx.times(px));
+
+      let zRe: Decimal;
+      let zIm: Decimal;
+      let cRe: Decimal;
+      let cIm: Decimal;
+
+      if (isJulia) {
+        zRe = re;
+        zIm = im;
+        cRe = cReD;
+        cIm = cImD;
+      } else {
+        zRe = new Decimal(0);
+        zIm = new Decimal(0);
+        cRe = re;
+        cIm = im;
+      }
+
+      let iter = 0;
+      let x2 = zRe.times(zRe);
+      let y2 = zIm.times(zIm);
+      let minDist = new Decimal('1e20');
+      let val = -1.0;
+
+      while (x2.plus(y2).lte(100000.0) && iter < maxIter) {
+        zIm = zRe.times(zIm).times(2).plus(cIm);
+        zRe = x2.minus(y2).plus(cRe);
+        x2 = zRe.times(zRe);
+        y2 = zIm.times(zIm);
+        iter++;
+      }
+
+      if (iter >= maxIter) {
+        val = -1.0;
+      } else {
+        const x2y2 = x2.plus(y2).toNumber();
+        const log_zn = Math.log(x2y2) * 0.5;
         const nu = Math.log(log_zn / Math.LN2) / Math.LN2;
         val = iter + 1.0 - nu;
       }
@@ -161,13 +239,16 @@ function renderTile(task: RenderTask): ArrayBuffer {
 
   let iterBuf: Float32Array;
 
-  if (wasmInstance) {
-    // ── WASM path ──────────────────────────────────────────────────────────
+  const dxCheck = Number(xMax) - Number(xMin);
+  const needsDecimal = dxCheck < 1e-14 || isNaN(dxCheck);
+
+  if (wasmInstance && !needsDecimal) {
+    // ─── WASM path ────────────────────────────────────────────────────────────────
     const ptr = wasmInstance.exports.allocBuffer(tileW, tileH);
     wasmInstance.exports.computeTile(
-      xMin, yMin, xMax, yMax,
+        Number(xMin), Number(yMin), Number(xMax), Number(yMax),
       tileW, tileH, maxIter,
-        juliaRe, juliaIm, isJulia ? 1 : 0, orbitTrapMode || 0
+        Number(juliaRe), Number(juliaIm), isJulia ? 1 : 0, orbitTrapMode || 0
     );
     // Read results directly from WASM linear memory
     iterBuf = new Float32Array(
@@ -176,7 +257,7 @@ function renderTile(task: RenderTask): ArrayBuffer {
       size
     );
   } else {
-    // ── JS fallback ────────────────────────────────────────────────────────
+    // ─── JS fallback ──────────────────────────────────────────────────────────────
     if (!_jsBuf || _jsBuf.length < size) {
       _jsBuf = new Float32Array(size);
     }
