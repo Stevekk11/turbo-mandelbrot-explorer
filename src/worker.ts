@@ -11,6 +11,8 @@ import type {RecolorTask, RenderTask, ToWorkerMessage} from './types';
 import {PALETTE_SIZE, PALETTES, samplePaletteData} from './colorPalettes';
 import Decimal from 'decimal.js';
 
+Decimal.set({precision: 60});
+
 // ─── WASM glue ────────────────────────────────────────────────────────────────
 
 interface MandelbrotWasm {
@@ -67,7 +69,7 @@ function computeTileJS(
   const juliaRe = Number(juliaReStr);
   const juliaIm = Number(juliaImStr);
 
-  if (xMax - xMin < 1e-14 || isNaN(dx)) {
+  if (xMax - xMin < 1e-13 || isNaN(dx)) {
     computeTileDecimal(xMinStr, yMinStr, xMaxStr, yMaxStr, width, height, maxIter, juliaReStr, juliaImStr, isJulia, orbitTrapMode, buf);
     return;
   }
@@ -127,7 +129,6 @@ function computeTileDecimal(
     juliaReStr: string, juliaImStr: string, isJulia: boolean, orbitTrapMode: number,
     buf: Float32Array
 ): void {
-  Decimal.set({precision: 40});
   const dXMin = new Decimal(xMinStr);
   const dYMin = new Decimal(yMinStr);
   const dXMax = new Decimal(xMaxStr);
@@ -137,10 +138,19 @@ function computeTileDecimal(
   const cReD = new Decimal(juliaReStr);
   const cImD = new Decimal(juliaImStr);
 
+  const zero = new Decimal(0);
+  const escapeRadius = new Decimal(100000.0);
+
+  // Pre-calculate x coordinates to avoid repeated additions in the inner loop
+  const xCoords = new Array<Decimal>(width);
+  for (let px = 0; px < width; px++) {
+    xCoords[px] = dXMin.plus(dx.times(px));
+  }
+
   for (let py = 0; py < height; py++) {
     const im = dYMin.plus(dy.times(py));
     for (let px = 0; px < width; px++) {
-      const re = dXMin.plus(dx.times(px));
+      const re = xCoords[px];
 
       let zRe: Decimal;
       let zIm: Decimal;
@@ -153,8 +163,8 @@ function computeTileDecimal(
         cRe = cReD;
         cIm = cImD;
       } else {
-        zRe = new Decimal(0);
-        zIm = new Decimal(0);
+        zRe = zero;
+        zIm = zero;
         cRe = re;
         cIm = im;
       }
@@ -165,7 +175,19 @@ function computeTileDecimal(
       let minDist = new Decimal('1e20');
       let val = -1.0;
 
-      while (x2.plus(y2).lte(100000.0) && iter < maxIter) {
+      while (x2.plus(y2).lte(escapeRadius) && iter < maxIter) {
+        if (orbitTrapMode > 0) {
+          let dist = new Decimal('1e20');
+          if (orbitTrapMode === 1) {
+            // dist = Math.sqrt(x2 + y2);
+            dist = x2.plus(y2).sqrt();
+          } else if (orbitTrapMode === 2) {
+            // dist = Math.abs(zRe * zIm);
+            dist = zRe.times(zIm).abs();
+          }
+          if (dist.lt(minDist)) minDist = dist;
+        }
+
         zIm = zRe.times(zIm).times(2).plus(cIm);
         zRe = x2.minus(y2).plus(cRe);
         x2 = zRe.times(zRe);
@@ -173,9 +195,9 @@ function computeTileDecimal(
         iter++;
       }
 
-      if (iter >= maxIter) {
-        val = -1.0;
-      } else {
+      if (orbitTrapMode > 0) {
+        val = minDist.lt('1e19') ? Math.log(minDist.toNumber() + 1e-10) * -10.0 : -1.0;
+      } else if (iter < maxIter) {
         const x2y2 = x2.plus(y2).toNumber();
         const log_zn = Math.log(x2y2) * 0.5;
         const nu = Math.log(log_zn / Math.LN2) / Math.LN2;
@@ -240,7 +262,7 @@ function renderTile(task: RenderTask): ArrayBuffer {
   let iterBuf: Float32Array;
 
   const dxCheck = Number(xMax) - Number(xMin);
-  const needsDecimal = dxCheck < 1e-14 || isNaN(dxCheck);
+  const needsDecimal = dxCheck < 1e-13 || isNaN(dxCheck);
 
   if (wasmInstance && !needsDecimal) {
     // ─── WASM path ────────────────────────────────────────────────────────────────

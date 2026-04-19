@@ -9,6 +9,8 @@ import type {Bookmark, RecolorTask, RenderResult, RenderTask, ViewState} from '.
 import {PALETTES} from './colorPalettes';
 import Decimal from 'decimal.js';
 
+Decimal.set({precision: 60});
+
 // ─── Worker pool ──────────────────────────────────────────────────────────────
 
 const NUM_WORKERS = Math.max(2, Math.min(8, navigator.hardwareConcurrency ?? 4));
@@ -404,8 +406,8 @@ function updateZoom() {
 let isDragging = false;
 let dragStartX = 0;
 let dragStartY = 0;
-let dragViewXMin = 0;
-let dragViewYMin = 0;
+let dragViewXMin = '0';
+let dragViewYMin = '0';
 let lastTouchDist = 0;
 // Snapshot of the offscreen canvas taken at drag start for instant visual pan
 let panSource: OffscreenCanvas | null = null;
@@ -441,12 +443,20 @@ canvas.addEventListener('mousemove', (e) => {
     if (panSource) ctx.drawImage(panSource, Math.round(dx * dpr), Math.round(dy * dpr));
 
     // Keep view coordinates up to date
-    const xRange = view.xMax - view.xMin;
-    const yRange = view.yMax - view.yMin;
-    view.xMin = dragViewXMin - (dx / canvas.clientWidth)  * xRange;
-    view.xMax = view.xMin + xRange;
-    view.yMin = dragViewYMin - (dy / canvas.clientHeight) * yRange;
-    view.yMax = view.yMin + yRange;
+    const dXMin = new Decimal(view.xMin);
+    const dXMax = new Decimal(view.xMax);
+    const dYMin = new Decimal(view.yMin);
+    const dYMax = new Decimal(view.yMax);
+    const xRange = dXMax.minus(dXMin);
+    const yRange = dYMax.minus(dYMin);
+    const dragDXMin = new Decimal(dragViewXMin);
+    const dragDYMin = new Decimal(dragViewYMin);
+    const newXMin = dragDXMin.minus(new Decimal(dx).div(canvas.clientWidth).times(xRange));
+    const newYMin = dragDYMin.minus(new Decimal(dy).div(canvas.clientHeight).times(yRange));
+    view.xMin = newXMin.toString();
+    view.xMax = newXMin.plus(xRange).toString();
+    view.yMin = newYMin.toString();
+    view.yMax = newYMin.plus(yRange).toString();
   }
 
   // Update Julia constant from mouse position (when in Julia preview mode)
@@ -454,7 +464,7 @@ canvas.addEventListener('mousemove', (e) => {
     const juliaPreview = document.getElementById('julia-coords');
     if (juliaPreview) {
       const [fx, fy] = screenToFractal(e.clientX * devicePixelRatio, e.clientY * devicePixelRatio);
-      juliaPreview.textContent = `c = ${fx.toFixed(4)} ${fy >= 0 ? '+' : ''}${fy.toFixed(4)}i`;
+      juliaPreview.textContent = `c = ${fx.toFixed(4)} ${fy.gte(0) ? '+' : ''}${fy.toFixed(4)}i`;
     }
   }
 });
@@ -549,12 +559,21 @@ canvas.addEventListener('touchmove', (e) => {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     if (panSource) ctx.drawImage(panSource, Math.round(dx * dpr), Math.round(dy * dpr));
 
-    const xRange = view.xMax - view.xMin;
-    const yRange = view.yMax - view.yMin;
-    view.xMin = dragViewXMin - (dx / canvas.clientWidth) * xRange;
-    view.xMax = view.xMin + xRange;
-    view.yMin = dragViewYMin - (dy / canvas.clientHeight) * yRange;
-    view.yMax = view.yMin + yRange;
+    const dXMin = new Decimal(view.xMin);
+    const dXMax = new Decimal(view.xMax);
+    const dYMin = new Decimal(view.yMin);
+    const dYMax = new Decimal(view.yMax);
+    const xRange = dXMax.minus(dXMin);
+    const yRange = dYMax.minus(dYMin);
+    const dragDXMin = new Decimal(dragViewXMin);
+    const dragDYMin = new Decimal(dragViewYMin);
+
+    const newXMin = dragDXMin.minus(new Decimal(dx).div(canvas.clientWidth).times(xRange));
+    const newYMin = dragDYMin.minus(new Decimal(dy).div(canvas.clientHeight).times(yRange));
+    view.xMin = newXMin.toString();
+    view.xMax = newXMin.plus(xRange).toString();
+    view.yMin = newYMin.toString();
+    view.yMax = newYMin.plus(yRange).toString();
   } else if (e.touches.length === 2) {
     const dist = Math.hypot(
       e.touches[1].clientX - e.touches[0].clientX,
@@ -655,8 +674,8 @@ function resetView() {
   view = { ...DEFAULT_VIEW };
   const aspect = canvas.width / canvas.height;
   const yRange = 3.5 / aspect;
-  view.yMin = -yRange / 2;
-  view.yMax = yRange / 2;
+  view.yMin = String(-yRange / 2);
+  view.yMax = String(yRange / 2);
   updateZoom();
   updateIterDisplay();
   updatePaletteUI();
@@ -742,16 +761,29 @@ function toggleAutoZoom() {
 function runAutoZoom() {
   if (!autoZoomActive) return;
   const [tx, ty] = AUTO_ZOOM_TARGETS[autoZoomTargetIdx % AUTO_ZOOM_TARGETS.length];
-  const currentCx = (view.xMin + view.xMax) / 2;
-  const currentCy = (view.yMin + view.yMax) / 2;
+
+  const dXMin = new Decimal(view.xMin);
+  const dXMax = new Decimal(view.xMax);
+  const dYMin = new Decimal(view.yMin);
+  const dYMax = new Decimal(view.yMax);
+  const currentCx = dXMin.plus(dXMax).div(2);
+  const currentCy = dYMin.plus(dYMax).div(2);
 
   // Smaller per-frame step for ~60fps smoothness (equivalent to old 0.003/frame @6fps)
   const moveStep = 0.0035;
   const zoomStep = 0.0005;
-  view.xMin += (tx - currentCx) * moveStep - (view.xMax - view.xMin) * zoomStep;
-  view.xMax += (tx - currentCx) * moveStep + (view.xMax - view.xMin) * zoomStep;
-  view.yMin += (ty - currentCy) * moveStep - (view.yMax - view.yMin) * zoomStep;
-  view.yMax += (ty - currentCy) * moveStep + (view.yMax - view.yMin) * zoomStep;
+
+  const xRange = dXMax.minus(dXMin);
+  const yRange = dYMax.minus(dYMin);
+
+  const targetX = new Decimal(tx);
+  const targetY = new Decimal(ty);
+
+  view.xMin = dXMin.plus(targetX.minus(currentCx).times(moveStep)).minus(xRange.times(zoomStep)).toString();
+  view.xMax = dXMax.plus(targetX.minus(currentCx).times(moveStep)).plus(xRange.times(zoomStep)).toString();
+  view.yMin = dYMin.plus(targetY.minus(currentCy).times(moveStep)).minus(yRange.times(zoomStep)).toString();
+  view.yMax = dYMax.plus(targetY.minus(currentCy).times(moveStep)).plus(yRange.times(zoomStep)).toString();
+
   updateZoom();
 
   autoZoomFrame++;
@@ -860,11 +892,11 @@ function initSettingsPanel() {
   juliaImInput.value = String(view.juliaIm);
 
   juliaReInput.addEventListener('input', () => {
-    view.juliaRe = parseFloat(juliaReInput.value) || 0;
+    view.juliaRe = String(parseFloat(juliaReInput.value) || 0);
     if (view.isJulia) scheduleRender();
   });
   juliaImInput.addEventListener('input', () => {
-    view.juliaIm = parseFloat(juliaImInput.value) || 0;
+    view.juliaIm = String(parseFloat(juliaImInput.value) || 0);
     if (view.isJulia) scheduleRender();
   });
 
@@ -873,8 +905,8 @@ function initSettingsPanel() {
     btn.addEventListener('click', () => {
       const re = parseFloat(btn.dataset.re ?? '0');
       const im = parseFloat(btn.dataset.im ?? '0');
-      view.juliaRe = re;
-      view.juliaIm = im;
+      view.juliaRe = String(re);
+      view.juliaIm = String(im);
       juliaReInput.value = String(re);
       juliaImInput.value = String(im);
       if (!view.isJulia) toggleJulia();
@@ -902,67 +934,67 @@ function initToolbar() {
 const BUILT_IN_BOOKMARKS: Bookmark[] = [
   {
     label: '🏠 Home',
-    xMin: -2.5,
-    xMax: 1.0,
-    yMin: -1.25,
-    yMax: 1.25,
+    xMin: '-2.5',
+    xMax: '1.0',
+    yMin: '-1.25',
+    yMax: '1.25',
     maxIter: 256,
     palette: 3,
     isJulia: false,
-    juliaRe: -0.7269,
-    juliaIm: 0.1889,
+    juliaRe: '-0.7269',
+    juliaIm: '0.1889',
     orbitTrapMode: 0
   },
   {
     label: '🦐 Seahorse',
-    xMin: -0.76,
-    xMax: -0.72,
-    yMin: 0.17,
-    yMax: 0.21,
+    xMin: '-0.76',
+    xMax: '-0.72',
+    yMin: '0.17',
+    yMax: '0.21',
     maxIter: 512,
     palette: 5,
     isJulia: false,
-    juliaRe: -0.7269,
-    juliaIm: 0.1889,
+    juliaRe: '-0.7269',
+    juliaIm: '0.1889',
     orbitTrapMode: 0
   },
   {
     label: '🐘 Elephant',
-    xMin: 0.24,
-    xMax: 0.28,
-    yMin: -0.01,
-    yMax: 0.02,
+    xMin: '0.24',
+    xMax: '0.28',
+    yMin: '-0.01',
+    yMax: '0.02',
     maxIter: 512,
     palette: 1,
     isJulia: false,
-    juliaRe: -0.7269,
-    juliaIm: 0.1889,
+    juliaRe: '-0.7269',
+    juliaIm: '0.1889',
     orbitTrapMode: 0
   },
   {
     label: '🌀 Spiral',
-    xMin: -0.748,
-    xMax: -0.740,
-    yMin: 0.100,
-    yMax: 0.107,
+    xMin: '-0.748',
+    xMax: '-0.740',
+    yMin: '0.100',
+    yMax: '0.107',
     maxIter: 1024,
     palette: 4,
     isJulia: false,
-    juliaRe: -0.7269,
-    juliaIm: 0.1889,
+    juliaRe: '-0.7269',
+    juliaIm: '0.1889',
     orbitTrapMode: 0
   },
   {
     label: '⚡ Julia Orbit',
-    xMin: -1.5,
-    xMax: 1.5,
-    yMin: -1.0,
-    yMax: 1.0,
+    xMin: '-1.5',
+    xMax: '1.5',
+    yMin: '-1.0',
+    yMax: '1.0',
     maxIter: 256,
     palette: 1,
     isJulia: true,
-    juliaRe: -0.7269,
-    juliaIm: 0.1889,
+    juliaRe: '-0.7269',
+    juliaIm: '0.1889',
     orbitTrapMode: 0
   },
 ];
@@ -976,7 +1008,7 @@ function loadBookmarks(): Bookmark[] {
 }
 
 function saveBookmark() {
-  const label = prompt('Bookmark name:', `Zoom ${view.zoom.toExponential(2)}×`);
+  const label = prompt('Bookmark name:', `Zoom ${Number(view.zoom).toExponential(2)}×`);
   if (!label) return;
   const bm: Bookmark = { label, ...view };
   const bookmarks = loadBookmarks();
@@ -986,8 +1018,10 @@ function saveBookmark() {
 }
 
 function applyBookmark(bm: Bookmark) {
-  view.xMin = bm.xMin; view.xMax = bm.xMax;
-  view.yMin = bm.yMin; view.yMax = bm.yMax;
+  view.xMin = String(bm.xMin);
+  view.xMax = String(bm.xMax);
+  view.yMin = String(bm.yMin);
+  view.yMax = String(bm.yMax);
   view.maxIter = bm.maxIter;
   view.palette = bm.palette;
   view.isJulia = bm.isJulia;
