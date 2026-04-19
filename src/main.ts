@@ -287,13 +287,15 @@ function handleWorkerMessage(e: MessageEvent) {
         updateProgressBar(1);
         setTimeout(() => updateProgressBar(-1), 500);
       }
-
-      dispatchTasks();
     }
 
     if (isCurrentRecolor) {
       pendingRecolorTiles--;
     }
+
+    // Always dispatch tasks if there are any, even if this result was stale,
+    // so the newly freed worker can pick up modern tasks.
+    dispatchTasks();
   }
 }
 
@@ -543,19 +545,20 @@ canvas.addEventListener('touchmove', (e) => {
     const my = (e.touches[0].clientY + e.touches[1].clientY) / 2;
     zoomAt(mx, my, factor, false);
 
-      if (panSource) {
-      const dpr = window.devicePixelRatio || 1;
-      const zoomX = mx * dpr;
-      const zoomY = my * dpr;
-      const visualScale = 1 / factor;
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.save();
-      ctx.translate(zoomX, zoomY);
-      ctx.scale(visualScale, visualScale);
-      ctx.translate(-zoomX, -zoomY);
-          ctx.drawImage(panSource, 0, 0);
-      ctx.restore();
-    }
+    const temp = new OffscreenCanvas(canvas.width, canvas.height);
+    temp.getContext('2d')!.drawImage(canvas, 0, 0);
+
+    const dpr = window.devicePixelRatio || 1;
+    const zoomX = mx * dpr;
+    const zoomY = my * dpr;
+    const visualScale = 1 / factor;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.save();
+    ctx.translate(zoomX, zoomY);
+    ctx.scale(visualScale, visualScale);
+    ctx.translate(-zoomX, -zoomY);
+    ctx.drawImage(temp, 0, 0);
+    ctx.restore();
 
     if (wheelTimer !== null) clearTimeout(wheelTimer);
     wheelTimer = setTimeout(() => { wheelTimer = null; scheduleRender(); }, 120);
@@ -766,9 +769,11 @@ function toggleColorAnim() {
 
 function runColorAnim() {
   if (!colorAnimActive) return;
-  view.colorOffset = (view.colorOffset + 0.002) % 1;
-  // Recolour tiles in workers without recomputing the fractal
-  scheduleRecolor();
+  if (pendingRecolorTiles === 0) {
+    view.colorOffset = (view.colorOffset + 0.005) % 1;
+    // Recolour tiles in workers without recomputing the fractal
+    scheduleRecolor();
+  }
   colorAnimRaf = requestAnimationFrame(runColorAnim);
 }
 
