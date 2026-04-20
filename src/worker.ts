@@ -212,7 +212,13 @@ function computeTilePerturbation(
       let val  = -1.0;
       let minDist = 1e20;
 
-      for (let n = 0; n < refOrbitLen; n++) {
+      // n is the current index into the reference orbit.  It is reset to 0 on
+      // rebasing so a single pixel may traverse the reference orbit many times.
+      let n = 0;
+
+      while (iter < maxIter) {
+        if (n >= refOrbitLen) break; // reference orbit exhausted — handled by fallback below
+
         const ZnRe = orbitRe[n];
         const ZnIm = orbitIm[n];
 
@@ -247,7 +253,27 @@ function computeTilePerturbation(
           break;
         }
 
-        if (iter >= maxIter) break;
+        // ── Perturbation rebasing ──────────────────────────────────────────────
+        // When |δ_{n+1}|² > |Z_{n+1}|² the floating-point perturbation has
+        // drifted too far from the true orbit.  Reset the reference orbit index
+        // to 0 and set δ = z_actual − Z_0 so the next step re-anchors the
+        // perturbation to the start of the reference.  This allows the pixel to
+        // accumulate arbitrarily many iterations without glitch artifacts.
+        // For Mandelbrot Z_0 = 0, so δ_new = z_actual.
+        // For Julia     Z_0 = refStart, so δ_new = z_actual − orbitRe/Im[0].
+        //
+        // Index safety: n < refOrbitLen ≤ maxIter, and orbitRe has maxIter+1
+        // elements, so orbitRe[n+1] ≤ orbitRe[maxIter] is always in bounds.
+        const d2    = dRe * dRe + dIm * dIm;
+        const Zn1Re = orbitRe[n + 1];
+        const Zn1Im = orbitIm[n + 1];
+        if (d2 > Zn1Re * Zn1Re + Zn1Im * Zn1Im) {
+          dRe = zActRe - orbitRe[0];
+          dIm = zActIm - orbitIm[0];
+          n = 0;
+        } else {
+          n++;
+        }
       }
 
       // When the reference orbit escaped early (refOrbitLen < maxIter) the
