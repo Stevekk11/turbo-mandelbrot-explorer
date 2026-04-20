@@ -57,6 +57,12 @@ export interface RenderTask {
   /** Color offset for animation */
   colorOffset: number;
   orbitTrapMode: number;
+  /**
+   * View-centre coordinates in DD string format ("hi|lo") used as the
+   * perturbation reference point for deep-zoom tiles.
+   */
+  refRe?: string;
+  refIm?: string;
 }
 
 /** Message sent to a worker to recolor a cached tile without recomputing the fractal */
