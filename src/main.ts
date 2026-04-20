@@ -64,7 +64,7 @@ const precisionTierHintEl = document.getElementById('precision-tier-hint');
 
 function updatePrecisionTierHint(tier: PrecisionTier) {
   if (!precisionTierHintEl) return;
-  precisionTierHintEl.textContent = `precision: ${tier.toUpperCase()}`;
+  precisionTierHintEl.textContent = `p: ${tier.toUpperCase()}`;
 }
 
 // Tile queue for distributing work
@@ -152,7 +152,6 @@ function resizeCanvas() {
   const aspect = canvas.width / canvas.height;
   const dXMin = ddFromString(view.xMin);
   const dXMax = ddFromString(view.xMax);
-  const cx = ddDivNum(ddAdd(dXMin, dXMax), 2);
   const cy = ddDivNum(ddAdd(ddFromString(view.yMin), ddFromString(view.yMax)), 2);
   const xRange = ddSub(dXMax, dXMin);
   const yRange = ddDivNum(xRange, aspect);
@@ -171,7 +170,7 @@ const TILE_SIZE = 256;
 function getPrecisionTier(xRange: DD): PrecisionTier {
   const dx = Math.abs(qdHi(xRange));
   if (!Number.isFinite(dx) || dx < 1e-28) return 'qd';
-  if (dx < 1e-13) return 'dd';
+  if (dx < 2e-13) return 'dd';
   return 'wasm';
 }
 

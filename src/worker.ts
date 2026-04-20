@@ -367,13 +367,13 @@ function computeTilePerturbationQD(
 
     for (let px = 0; px < width; px++) {
       const pixelRe_qd = qdAdd(xMin_qd, qdMulNum(dx_qd, px));
-      const dcReQD = qdSub(pixelRe_qd, refRe);
-      const dcReF = dcReQD[0] + dcReQD[1] + dcReQD[2] + dcReQD[3];
+      const dcReQD_p = qdSub(pixelRe_qd, refRe);
+      const dcReF_p = dcReQD_p[0] + dcReQD_p[1] + dcReQD_p[2] + dcReQD_p[3];
 
-      let dRe = isJulia ? dcReF : 0.0;
+      let dRe = isJulia ? dcReF_p : 0.0;
       let dIm = isJulia ? dcImF : 0.0;
 
-      const loopDcRe = isJulia ? 0.0 : dcReF;
+      const loopDcRe = isJulia ? 0.0 : dcReF_p;
       const loopDcIm = isJulia ? 0.0 : dcImF;
 
       let iter = 0;
@@ -430,14 +430,15 @@ function computeTilePerturbationQD(
       if (val === -1.0 && refOrbitLen < maxIter && iter < maxIter && orbitTrapMode === 0) {
         let zRe = orbitRe[refOrbitLen] + dRe;
         let zIm = orbitIm[refOrbitLen] + dIm;
-        const cPixelRe = isJulia ? Number(juliaReStr) : (qdHi(refRe) + dcReF);
+        const cPixelRe = isJulia ? Number(juliaReStr) : (qdHi(refRe) + dcReF_p);
         const cPixelIm = isJulia ? Number(juliaImStr) : (qdHi(refIm) + dcImF);
 
         while (iter < maxIter) {
           const x2 = zRe * zRe;
           const y2 = zIm * zIm;
-          if (x2 + y2 > 100000.0) {
-            const log_zn = Math.log(x2 + y2) * 0.5;
+          const r2 = x2 + y2;
+          if (r2 > 100000.0) {
+            const log_zn = Math.log(r2) * 0.5;
             const nu = Math.log(log_zn / Math.LN2) / Math.LN2;
             val = iter + 1.0 - nu;
             break;
@@ -544,7 +545,7 @@ function renderTile(task: RenderTask): ArrayBuffer {
   const yMaxHi = qdHi(qdFromString(yMax));
 
   const dxCheck = xMaxHi - xMinHi;
-  const inferredTier = !Number.isFinite(dxCheck) ? 'qd' : (Math.abs(dxCheck) < 1e-28 ? 'qd' : (Math.abs(dxCheck) < 1e-13 ? 'dd' : 'wasm'));
+  const inferredTier = !Number.isFinite(dxCheck) ? 'qd' : (Math.abs(dxCheck) < 1e-28 ? 'qd' : (Math.abs(dxCheck) < 2e-13 ? 'dd' : 'wasm'));
   const precisionTier = task.precisionTier ?? inferredTier;
 
   let iterBuf: Float32Array;
