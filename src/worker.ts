@@ -363,12 +363,13 @@ function computeTilePerturbationQD(
   for (let py = 0; py < height; py++) {
     const pixelIm_qd = qdAdd(yMin_qd, qdMulNum(dy_qd, py));
     const dcImQD = qdSub(pixelIm_qd, refIm);
-    const dcImF = dcImQD[0] + dcImQD[1] + dcImQD[2] + dcImQD[3];
+    // Use all 4 components for better precision in the float64 perturbation
+    const dcImF = (dcImQD[0] + dcImQD[1]) + (dcImQD[2] + dcImQD[3]);
 
     for (let px = 0; px < width; px++) {
       const pixelRe_qd = qdAdd(xMin_qd, qdMulNum(dx_qd, px));
       const dcReQD_p = qdSub(pixelRe_qd, refRe);
-      const dcReF_p = dcReQD_p[0] + dcReQD_p[1] + dcReQD_p[2] + dcReQD_p[3];
+      const dcReF_p = (dcReQD_p[0] + dcReQD_p[1]) + (dcReQD_p[2] + dcReQD_p[3]);
 
       let dRe = isJulia ? dcReF_p : 0.0;
       let dIm = isJulia ? dcImF : 0.0;

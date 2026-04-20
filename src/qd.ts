@@ -104,13 +104,16 @@ export function qdAdd(a: QD, b: QD): QD {
     [s1, e0] = twoSum(s1, e0);
     [s2, e1] = twoSum(s2, e1);
     [s3, e2] = twoSum(s3, e2);
-    e3 = e3 + e2;
+    const s4 = e3 + e2;
 
-    [s2, e1] = twoSum(s2, e1);
-    [s3, e2] = twoSum(s3, e2);
-    e3 = e3 + e2;
+    [s2, e0] = twoSum(s2, e0);
+    [s3, e1] = twoSum(s3, e1);
+    const s5 = s4 + e1;
 
-    return renorm5(s0, s1, s2, s3, e3 + e1 + e0);
+    [s3, e0] = twoSum(s3, e0);
+    const s6 = s5 + e0;
+
+    return renorm5(s0, s1, s2, s3, s6);
 }
 
 export function qdSub(a: QD, b: QD): QD {
@@ -128,15 +131,15 @@ export function qdMulNum(a: QD, b: number): QD {
     let [s1, t0] = quickTwoSum(p1, e0);
     let [s2, t1] = twoSum(p2, e1);
     let [s3, t2] = twoSum(p3, e2);
-    const s4 = e3;
 
     [s2, t0] = twoSum(s2, t0);
     [s3, t1] = twoSum(s3, t1);
-    const s5 = t2 + s4;
+    const s4 = t2 + e3;
     [s3, t0] = twoSum(s3, t0);
-    const t3 = t1 + s5;
+    const s5 = t1 + s4;
+    const s6 = t0 + s5;
 
-    return renorm5(s0, s1, s2, s3, t0 + t3);
+    return renorm5(s0, s1, s2, s3, s6);
 }
 
 export function qdDivNum(a: QD, b: number): QD {
@@ -173,6 +176,9 @@ export function qdMul(a: QD, b: QD): QD {
     let [s2, r1] = twoSum(r0, p3);
     [s2, r1] = twoSum(s2, p4);
     [s2, r1] = twoSum(s2, p5);
+    // Include the errors from level 1
+    [s2, r1] = twoSum(s2, q1);
+    [s2, r1] = twoSum(s2, q2);
 
     // Order-3 terms (only high parts needed)
     const p6 = a[0] * b[3];
@@ -180,9 +186,17 @@ export function qdMul(a: QD, b: QD): QD {
     const p8 = a[2] * b[1];
     const p9 = a[3] * b[0];
 
-    let s3 = r1 + p6 + p7 + p8 + p9 + q1 + q2;
+    // Order-3 accumulation
+    let [s3, r2] = twoSum(r1, p6);
+    [s3, r2] = twoSum(s3, p7);
+    [s3, r2] = twoSum(s3, p8);
+    [s3, r2] = twoSum(s3, p9);
+    // Include errors from level 2
+    [s3, r2] = twoSum(s3, q3);
+    [s3, r2] = twoSum(s3, q4);
+    [s3, r2] = twoSum(s3, q5);
 
-    return renorm5(p0, s1, s2, s3, 0);
+    return renorm5(p0, s1, s2, s3, r2);
 }
 
 export function qdDiv(a: QD, b: QD): QD {

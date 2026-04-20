@@ -7,17 +7,7 @@
 import './style.css';
 import type {Bookmark, PrecisionTier, RecolorTask, RenderResult, RenderTask, ViewState} from './types';
 import {PALETTES} from './colorPalettes';
-import {
-  type QD as DD,
-  qdAdd as ddAdd,
-  qdDiv as ddDiv,
-  qdDivNum as ddDivNum,
-  qdFromString as ddFromString,
-  qdHi,
-  qdMulNum as ddMulNum,
-  qdSub as ddSub,
-  qdToString as ddToString,
-} from './qd';
+import {type QD, qdAdd, qdDiv, qdDivNum, qdFromString, qdHi, qdMulNum, qdSub, qdToString,} from './qd';
 
 // ─── Worker pool ──────────────────────────────────────────────────────────────
 
@@ -149,14 +139,14 @@ function resizeCanvas() {
   offCtx = offscreen.getContext('2d') as OffscreenCanvasRenderingContext2D;
 
   // Keep aspect ratio correct by adjusting Y range
-  const aspect = canvas.width / canvas.height;
-  const dXMin = ddFromString(view.xMin);
-  const dXMax = ddFromString(view.xMax);
-  const cy = ddDivNum(ddAdd(ddFromString(view.yMin), ddFromString(view.yMax)), 2);
-  const xRange = ddSub(dXMax, dXMin);
-  const yRange = ddDivNum(xRange, aspect);
-  view.yMin = ddToString(ddSub(cy, ddDivNum(yRange, 2)));
-  view.yMax = ddToString(ddAdd(cy, ddDivNum(yRange, 2)));
+  const dXMin = qdFromString(view.xMin);
+  const dXMax = qdFromString(view.xMax);
+  const cy = qdDivNum(qdAdd(qdFromString(view.yMin), qdFromString(view.yMax)), 2);
+  const xRange = qdSub(dXMax, dXMin);
+  // aspect = width / height, so yRange = xRange / aspect = xRange * (height / width)
+  const yRange = qdDivNum(qdMulNum(xRange, canvas.height), canvas.width);
+  view.yMin = qdToString(qdSub(cy, qdDivNum(yRange, 2)));
+  view.yMax = qdToString(qdAdd(cy, qdDivNum(yRange, 2)));
 
   scheduleRender();
 }
@@ -167,7 +157,7 @@ window.addEventListener('resize', () => resizeCanvas());
 
 const TILE_SIZE = 256;
 
-function getPrecisionTier(xRange: DD): PrecisionTier {
+function getPrecisionTier(xRange: QD): PrecisionTier {
   const dx = Math.abs(qdHi(xRange));
   if (!Number.isFinite(dx) || dx < 1e-28) return 'qd';
   if (dx < 2e-13) return 'dd';
@@ -193,18 +183,18 @@ function scheduleRender() {
   const rows = Math.ceil(ch / TILE_SIZE);
   totalTiles = cols * rows;
 
-  const dXMin = ddFromString(view.xMin);
-  const dXMax = ddFromString(view.xMax);
-  const dYMin = ddFromString(view.yMin);
-  const dYMax = ddFromString(view.yMax);
-  const xRange = ddSub(dXMax, dXMin);
-  const yRange = ddSub(dYMax, dYMin);
+  const dXMin = qdFromString(view.xMin);
+  const dXMax = qdFromString(view.xMax);
+  const dYMin = qdFromString(view.yMin);
+  const dYMax = qdFromString(view.yMax);
+  const xRange = qdSub(dXMax, dXMin);
+  const yRange = qdSub(dYMax, dYMin);
   const precisionTier = getPrecisionTier(xRange);
   updatePrecisionTierHint(precisionTier);
 
   // View-centre reference point for perturbation-theory deep-zoom tiles
-  const refReStr = ddToString(ddDivNum(ddAdd(dXMin, dXMax), 2));
-  const refImStr = ddToString(ddDivNum(ddAdd(dYMin, dYMax), 2));
+  const refReStr = qdToString(qdDivNum(qdAdd(dXMin, dXMax), 2));
+  const refImStr = qdToString(qdDivNum(qdAdd(dYMin, dYMax), 2));
 
   let taskId = 0;
   for (let row = 0; row < rows; row++) {
@@ -219,10 +209,10 @@ function scheduleRender() {
         taskId: taskId++,
         gen,
         tileX, tileY, tileW, tileH,
-        xMin: ddToString(ddAdd(dXMin, ddMulNum(xRange, tileX / cw))),
-        yMin: ddToString(ddAdd(dYMin, ddMulNum(yRange, tileY / ch))),
-        xMax: ddToString(ddAdd(dXMin, ddMulNum(xRange, (tileX + tileW) / cw))),
-        yMax: ddToString(ddAdd(dYMin, ddMulNum(yRange, (tileY + tileH) / ch))),
+        xMin: qdToString(qdAdd(dXMin, qdMulNum(qdDivNum(xRange, cw), tileX))),
+        yMin: qdToString(qdAdd(dYMin, qdMulNum(qdDivNum(yRange, ch), tileY))),
+        xMax: qdToString(qdAdd(dXMin, qdMulNum(qdDivNum(xRange, cw), tileX + tileW))),
+        yMax: qdToString(qdAdd(dYMin, qdMulNum(qdDivNum(yRange, ch), tileY + tileH))),
         maxIter: view.maxIter,
         juliaRe: view.juliaRe,
         juliaIm: view.juliaIm,
@@ -338,14 +328,18 @@ function handleWorkerMessage(e: MessageEvent) {
 
 // ─── Coordinate utilities ─────────────────────────────────────────────────────
 
-function screenToFractal(sx: number, sy: number): [DD, DD] {
-  const dXMin = ddFromString(view.xMin);
-  const dXMax = ddFromString(view.xMax);
-  const dYMin = ddFromString(view.yMin);
-  const dYMax = ddFromString(view.yMax);
+function screenToFractal(sx: number, sy: number): [QD, QD] {
+  const dXMin = qdFromString(view.xMin);
+  const dXMax = qdFromString(view.xMax);
+  const dYMin = qdFromString(view.yMin);
+  const dYMax = qdFromString(view.yMax);
 
-  const fx = ddAdd(dXMin, ddMulNum(ddSub(dXMax, dXMin), sx / canvas.width));
-  const fy = ddAdd(dYMin, ddMulNum(ddSub(dYMax, dYMin), sy / canvas.height));
+  const xRange = qdSub(dXMax, dXMin);
+  const yRange = qdSub(dYMax, dYMin);
+
+  // Use qdDivNum for high-precision division of the range by pixels
+  const fx = qdAdd(dXMin, qdMulNum(qdDivNum(xRange, canvas.width), sx));
+  const fy = qdAdd(dYMin, qdMulNum(qdDivNum(yRange, canvas.height), sy));
   return [fx, fy];
 }
 
@@ -395,26 +389,33 @@ function scheduleRecolor() {
 }
 
 function zoomAt(screenX: number, screenY: number, factor: number, rerender = true) {
-  const [fx, fy] = screenToFractal(screenX * devicePixelRatio, screenY * devicePixelRatio);
-  const dXMin = ddFromString(view.xMin);
-  const dXMax = ddFromString(view.xMax);
-  const dYMin = ddFromString(view.yMin);
-  const dYMax = ddFromString(view.yMax);
+  const dpr = window.devicePixelRatio || 1;
+  const [fx, fy] = screenToFractal(screenX * dpr, screenY * dpr);
+  const dXMin = qdFromString(view.xMin);
+  const dXMax = qdFromString(view.xMax);
+  const dYMin = qdFromString(view.yMin);
+  const dYMax = qdFromString(view.yMax);
 
-  const xRange = ddMulNum(ddSub(dXMax, dXMin), factor);
-  const yRange = ddMulNum(ddSub(dYMax, dYMin), factor);
-  view.xMin = ddToString(ddSub(fx, ddMulNum(xRange, screenX / canvas.clientWidth)));
-  view.xMax = ddToString(ddAdd(fx, ddMulNum(xRange, 1 - screenX / canvas.clientWidth)));
-  view.yMin = ddToString(ddSub(fy, ddMulNum(yRange, screenY / canvas.clientHeight)));
-  view.yMax = ddToString(ddAdd(fy, ddMulNum(yRange, 1 - screenY / canvas.clientHeight)));
+  const xRange = qdSub(dXMax, dXMin);
+  const yRange = qdSub(dYMax, dYMin);
+  const newXRange = qdMulNum(xRange, factor);
+  const newYRange = qdMulNum(yRange, factor);
+
+  // We want the point (screenX, screenY) to remain at the same fractal coordinates (fx, fy)
+  // view.xMin = fx - (newXRange * (screenX / clientWidth))
+  view.xMin = qdToString(qdSub(fx, qdMulNum(qdDivNum(newXRange, canvas.clientWidth), screenX)));
+  view.xMax = qdToString(qdAdd(qdFromString(view.xMin), newXRange));
+  view.yMin = qdToString(qdSub(fy, qdMulNum(qdDivNum(newYRange, canvas.clientHeight), screenY)));
+  view.yMax = qdToString(qdAdd(qdFromString(view.yMin), newYRange));
+
   updateZoom();
   if (rerender) scheduleRender();
 }
 
 function updateZoom() {
-  const dXMin = ddFromString(view.xMin);
-  const dXMax = ddFromString(view.xMax);
-  const zoomD = ddDiv([3.5, 0, 0, 0], ddSub(dXMax, dXMin));
+  const dXMin = qdFromString(view.xMin);
+  const dXMax = qdFromString(view.xMax);
+  const zoomD = qdDiv([3.5, 0, 0, 0], qdSub(dXMax, dXMin));
   const z = zoomD[0];
   view.zoom = String(z);
 
@@ -486,20 +487,25 @@ canvas.addEventListener('mousemove', (e) => {
     if (panSource) ctx.drawImage(panSource, Math.round(dx * dpr), Math.round(dy * dpr));
 
     // Keep view coordinates up to date
-    const dXMin = ddFromString(view.xMin);
-    const dXMax = ddFromString(view.xMax);
-    const dYMin = ddFromString(view.yMin);
-    const dYMax = ddFromString(view.yMax);
-    const xRange = ddSub(dXMax, dXMin);
-    const yRange = ddSub(dYMax, dYMin);
-    const dragDXMin = ddFromString(dragViewXMin);
-    const dragDYMin = ddFromString(dragViewYMin);
-    const newXMin = ddSub(dragDXMin, ddMulNum(xRange, dx / canvas.clientWidth));
-    const newYMin = ddSub(dragDYMin, ddMulNum(yRange, dy / canvas.clientHeight));
-    view.xMin = ddToString(newXMin);
-    view.xMax = ddToString(ddAdd(newXMin, xRange));
-    view.yMin = ddToString(newYMin);
-    view.yMax = ddToString(ddAdd(newYMin, yRange));
+    const dXMin = qdFromString(view.xMin);
+    const dXMax = qdFromString(view.xMax);
+    const dYMin = qdFromString(view.yMin);
+    const dYMax = qdFromString(view.yMax);
+    const xRange = qdSub(dXMax, dXMin);
+    const yRange = qdSub(dYMax, dYMin);
+    const dragDXMin = qdFromString(dragViewXMin);
+    const dragDYMin = qdFromString(dragViewYMin);
+
+    // Calculate shift in fractal units: shift = (pixelDelta / clientDimension) * range
+    const shiftX = qdMulNum(qdDivNum(xRange, canvas.clientWidth), dx);
+    const shiftY = qdMulNum(qdDivNum(yRange, canvas.clientHeight), dy);
+
+    const newXMin = qdSub(dragDXMin, shiftX);
+    const newYMin = qdSub(dragDYMin, shiftY);
+    view.xMin = qdToString(newXMin);
+    view.xMax = qdToString(qdAdd(newXMin, xRange));
+    view.yMin = qdToString(newYMin);
+    view.yMax = qdToString(qdAdd(newYMin, yRange));
   }
 
   // Update Julia constant from mouse position (when in Julia preview mode)
@@ -602,21 +608,21 @@ canvas.addEventListener('touchmove', (e) => {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     if (panSource) ctx.drawImage(panSource, Math.round(dx * dpr), Math.round(dy * dpr));
 
-    const dXMin = ddFromString(view.xMin);
-    const dXMax = ddFromString(view.xMax);
-    const dYMin = ddFromString(view.yMin);
-    const dYMax = ddFromString(view.yMax);
-    const xRange = ddSub(dXMax, dXMin);
-    const yRange = ddSub(dYMax, dYMin);
-    const dragDXMin = ddFromString(dragViewXMin);
-    const dragDYMin = ddFromString(dragViewYMin);
+    const dXMin = qdFromString(view.xMin);
+    const dXMax = qdFromString(view.xMax);
+    const dYMin = qdFromString(view.yMin);
+    const dYMax = qdFromString(view.yMax);
+    const xRange = qdSub(dXMax, dXMin);
+    const yRange = qdSub(dYMax, dYMin);
+    const dragDXMin = qdFromString(dragViewXMin);
+    const dragDYMin = qdFromString(dragViewYMin);
 
-    const newXMin = ddSub(dragDXMin, ddMulNum(xRange, dx / canvas.clientWidth));
-    const newYMin = ddSub(dragDYMin, ddMulNum(yRange, dy / canvas.clientHeight));
-    view.xMin = ddToString(newXMin);
-    view.xMax = ddToString(ddAdd(newXMin, xRange));
-    view.yMin = ddToString(newYMin);
-    view.yMax = ddToString(ddAdd(newYMin, yRange));
+    const newXMin = qdSub(dragDXMin, qdMulNum(xRange, dx / canvas.clientWidth));
+    const newYMin = qdSub(dragDYMin, qdMulNum(yRange, dy / canvas.clientHeight));
+    view.xMin = qdToString(newXMin);
+    view.xMax = qdToString(qdAdd(newXMin, xRange));
+    view.yMin = qdToString(newYMin);
+    view.yMax = qdToString(qdAdd(newYMin, yRange));
   } else if (e.touches.length === 2) {
     const dist = Math.hypot(
       e.touches[1].clientX - e.touches[0].clientX,
