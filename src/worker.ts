@@ -641,7 +641,9 @@ self.onmessage = async (e: MessageEvent<ToWorkerMessage>) => {
   }
 
   if (msg.type === 'updatePalette') {
-    PALETTES[msg.index].data = new Uint8ClampedArray(msg.data);
+    if (Number.isInteger(msg.index) && msg.index >= 0 && msg.index < PALETTES.length) {
+      PALETTES[msg.index].data = new Uint8ClampedArray(msg.data);
+    }
     return;
   }
 
