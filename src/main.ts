@@ -7,9 +7,7 @@
 import './style.css';
 import type {Bookmark, RecolorTask, RenderResult, RenderTask, ViewState} from './types';
 import {PALETTES} from './colorPalettes';
-import Decimal from 'decimal.js';
-
-Decimal.set({precision: 60});
+import {type DD, ddAdd, ddSub, ddMulNum, ddDivNum, ddDiv, ddFromString, ddToString} from './dd';
 
 // ─── Worker pool ──────────────────────────────────────────────────────────────
 
@@ -138,14 +136,14 @@ function resizeCanvas() {
 
   // Keep aspect ratio correct by adjusting Y range
   const aspect = canvas.width / canvas.height;
-  const dXMin = new Decimal(view.xMin);
-  const dXMax = new Decimal(view.xMax);
-  const cx = dXMin.plus(dXMax).div(2);
-  const cy = new Decimal(view.yMin).plus(new Decimal(view.yMax)).div(2);
-  const xRange = dXMax.minus(dXMin);
-  const yRange = xRange.div(aspect);
-  view.yMin = cy.minus(yRange.div(2)).toString();
-  view.yMax = cy.plus(yRange.div(2)).toString();
+  const dXMin = ddFromString(view.xMin);
+  const dXMax = ddFromString(view.xMax);
+  const cx = ddDivNum(ddAdd(dXMin, dXMax), 2);
+  const cy = ddDivNum(ddAdd(ddFromString(view.yMin), ddFromString(view.yMax)), 2);
+  const xRange = ddSub(dXMax, dXMin);
+  const yRange = ddDivNum(xRange, aspect);
+  view.yMin = ddToString(ddSub(cy, ddDivNum(yRange, 2)));
+  view.yMax = ddToString(ddAdd(cy, ddDivNum(yRange, 2)));
 
   scheduleRender();
 }
@@ -175,12 +173,16 @@ function scheduleRender() {
   const rows = Math.ceil(ch / TILE_SIZE);
   totalTiles = cols * rows;
 
-  const dXMin = new Decimal(view.xMin);
-  const dXMax = new Decimal(view.xMax);
-  const dYMin = new Decimal(view.yMin);
-  const dYMax = new Decimal(view.yMax);
-  const xRange = dXMax.minus(dXMin);
-  const yRange = dYMax.minus(dYMin);
+  const dXMin = ddFromString(view.xMin);
+  const dXMax = ddFromString(view.xMax);
+  const dYMin = ddFromString(view.yMin);
+  const dYMax = ddFromString(view.yMax);
+  const xRange = ddSub(dXMax, dXMin);
+  const yRange = ddSub(dYMax, dYMin);
+
+  // View-centre reference point for perturbation-theory deep-zoom tiles
+  const refReStr = ddToString(ddDivNum(ddAdd(dXMin, dXMax), 2));
+  const refImStr = ddToString(ddDivNum(ddAdd(dYMin, dYMax), 2));
 
   let taskId = 0;
   for (let row = 0; row < rows; row++) {
@@ -195,10 +197,10 @@ function scheduleRender() {
         taskId: taskId++,
         gen,
         tileX, tileY, tileW, tileH,
-        xMin: dXMin.plus(new Decimal(tileX).div(cw).times(xRange)).toString(),
-        yMin: dYMin.plus(new Decimal(tileY).div(ch).times(yRange)).toString(),
-        xMax: dXMin.plus(new Decimal(tileX + tileW).div(cw).times(xRange)).toString(),
-        yMax: dYMin.plus(new Decimal(tileY + tileH).div(ch).times(yRange)).toString(),
+        xMin: ddToString(ddAdd(dXMin, ddMulNum(xRange, tileX / cw))),
+        yMin: ddToString(ddAdd(dYMin, ddMulNum(yRange, tileY / ch))),
+        xMax: ddToString(ddAdd(dXMin, ddMulNum(xRange, (tileX + tileW) / cw))),
+        yMax: ddToString(ddAdd(dYMin, ddMulNum(yRange, (tileY + tileH) / ch))),
         maxIter: view.maxIter,
         juliaRe: view.juliaRe,
         juliaIm: view.juliaIm,
@@ -207,6 +209,8 @@ function scheduleRender() {
         colorSpeed: view.colorSpeed,
         colorOffset: view.colorOffset,
         orbitTrapMode: view.orbitTrapMode,
+        refRe: refReStr,
+        refIm: refImStr,
       };
       taskQueue.push({ task, gen });
     }
@@ -310,14 +314,14 @@ function handleWorkerMessage(e: MessageEvent) {
 
 // ─── Coordinate utilities ─────────────────────────────────────────────────────
 
-function screenToFractal(sx: number, sy: number): [Decimal, Decimal] {
-  const dXMin = new Decimal(view.xMin);
-  const dXMax = new Decimal(view.xMax);
-  const dYMin = new Decimal(view.yMin);
-  const dYMax = new Decimal(view.yMax);
+function screenToFractal(sx: number, sy: number): [DD, DD] {
+  const dXMin = ddFromString(view.xMin);
+  const dXMax = ddFromString(view.xMax);
+  const dYMin = ddFromString(view.yMin);
+  const dYMax = ddFromString(view.yMax);
 
-  const fx = dXMin.plus(new Decimal(sx).div(canvas.width).times(dXMax.minus(dXMin)));
-  const fy = dYMin.plus(new Decimal(sy).div(canvas.height).times(dYMax.minus(dYMin)));
+  const fx = ddAdd(dXMin, ddMulNum(ddSub(dXMax, dXMin), sx / canvas.width));
+  const fy = ddAdd(dYMin, ddMulNum(ddSub(dYMax, dYMin), sy / canvas.height));
   return [fx, fy];
 }
 
@@ -367,30 +371,29 @@ function scheduleRecolor() {
 
 function zoomAt(screenX: number, screenY: number, factor: number, rerender = true) {
   const [fx, fy] = screenToFractal(screenX * devicePixelRatio, screenY * devicePixelRatio);
-  const dXMin = new Decimal(view.xMin);
-  const dXMax = new Decimal(view.xMax);
-  const dYMin = new Decimal(view.yMin);
-  const dYMax = new Decimal(view.yMax);
+  const dXMin = ddFromString(view.xMin);
+  const dXMax = ddFromString(view.xMax);
+  const dYMin = ddFromString(view.yMin);
+  const dYMax = ddFromString(view.yMax);
 
-  const xRange = dXMax.minus(dXMin).times(factor);
-  const yRange = dYMax.minus(dYMin).times(factor);
-  view.xMin = fx.minus(xRange.times(screenX / canvas.clientWidth)).toString();
-  view.xMax = fx.plus(xRange.times(1 - screenX / canvas.clientWidth)).toString();
-  view.yMin = fy.minus(yRange.times(screenY / canvas.clientHeight)).toString();
-  view.yMax = fy.plus(yRange.times(1 - screenY / canvas.clientHeight)).toString();
+  const xRange = ddMulNum(ddSub(dXMax, dXMin), factor);
+  const yRange = ddMulNum(ddSub(dYMax, dYMin), factor);
+  view.xMin = ddToString(ddSub(fx, ddMulNum(xRange, screenX / canvas.clientWidth)));
+  view.xMax = ddToString(ddAdd(fx, ddMulNum(xRange, 1 - screenX / canvas.clientWidth)));
+  view.yMin = ddToString(ddSub(fy, ddMulNum(yRange, screenY / canvas.clientHeight)));
+  view.yMax = ddToString(ddAdd(fy, ddMulNum(yRange, 1 - screenY / canvas.clientHeight)));
   updateZoom();
   if (rerender) scheduleRender();
 }
 
 function updateZoom() {
-  const baseRange = new Decimal(3.5); // default xMax - xMin
-  const dXMin = new Decimal(view.xMin);
-  const dXMax = new Decimal(view.xMax);
-  const zoomD = baseRange.div(dXMax.minus(dXMin));
-  view.zoom = zoomD.toString();
+  const dXMin = ddFromString(view.xMin);
+  const dXMax = ddFromString(view.xMax);
+  const zoomD = ddDiv([3.5, 0], ddSub(dXMax, dXMin));
+  view.zoom = String(zoomD[0]);
   const zoomEl = document.getElementById('zoom-counter');
   if (zoomEl) {
-    const z = zoomD.toNumber();
+    const z = zoomD[0];
     let label: string;
     if (z < 1000) label = `${z.toFixed(1)}×`;
     else if (z < 1e6) label = `${(z / 1000).toFixed(2)}K×`;
@@ -443,20 +446,20 @@ canvas.addEventListener('mousemove', (e) => {
     if (panSource) ctx.drawImage(panSource, Math.round(dx * dpr), Math.round(dy * dpr));
 
     // Keep view coordinates up to date
-    const dXMin = new Decimal(view.xMin);
-    const dXMax = new Decimal(view.xMax);
-    const dYMin = new Decimal(view.yMin);
-    const dYMax = new Decimal(view.yMax);
-    const xRange = dXMax.minus(dXMin);
-    const yRange = dYMax.minus(dYMin);
-    const dragDXMin = new Decimal(dragViewXMin);
-    const dragDYMin = new Decimal(dragViewYMin);
-    const newXMin = dragDXMin.minus(new Decimal(dx).div(canvas.clientWidth).times(xRange));
-    const newYMin = dragDYMin.minus(new Decimal(dy).div(canvas.clientHeight).times(yRange));
-    view.xMin = newXMin.toString();
-    view.xMax = newXMin.plus(xRange).toString();
-    view.yMin = newYMin.toString();
-    view.yMax = newYMin.plus(yRange).toString();
+    const dXMin = ddFromString(view.xMin);
+    const dXMax = ddFromString(view.xMax);
+    const dYMin = ddFromString(view.yMin);
+    const dYMax = ddFromString(view.yMax);
+    const xRange = ddSub(dXMax, dXMin);
+    const yRange = ddSub(dYMax, dYMin);
+    const dragDXMin = ddFromString(dragViewXMin);
+    const dragDYMin = ddFromString(dragViewYMin);
+    const newXMin = ddSub(dragDXMin, ddMulNum(xRange, dx / canvas.clientWidth));
+    const newYMin = ddSub(dragDYMin, ddMulNum(yRange, dy / canvas.clientHeight));
+    view.xMin = ddToString(newXMin);
+    view.xMax = ddToString(ddAdd(newXMin, xRange));
+    view.yMin = ddToString(newYMin);
+    view.yMax = ddToString(ddAdd(newYMin, yRange));
   }
 
   // Update Julia constant from mouse position (when in Julia preview mode)
@@ -464,7 +467,7 @@ canvas.addEventListener('mousemove', (e) => {
     const juliaPreview = document.getElementById('julia-coords');
     if (juliaPreview) {
       const [fx, fy] = screenToFractal(e.clientX * devicePixelRatio, e.clientY * devicePixelRatio);
-      juliaPreview.textContent = `c = ${fx.toFixed(4)} ${fy.gte(0) ? '+' : ''}${fy.toFixed(4)}i`;
+      juliaPreview.textContent = `c = ${fx[0].toFixed(4)} ${fy[0] >= 0 ? '+' : ''}${fy[0].toFixed(4)}i`;
     }
   }
 });
@@ -559,21 +562,21 @@ canvas.addEventListener('touchmove', (e) => {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     if (panSource) ctx.drawImage(panSource, Math.round(dx * dpr), Math.round(dy * dpr));
 
-    const dXMin = new Decimal(view.xMin);
-    const dXMax = new Decimal(view.xMax);
-    const dYMin = new Decimal(view.yMin);
-    const dYMax = new Decimal(view.yMax);
-    const xRange = dXMax.minus(dXMin);
-    const yRange = dYMax.minus(dYMin);
-    const dragDXMin = new Decimal(dragViewXMin);
-    const dragDYMin = new Decimal(dragViewYMin);
+    const dXMin = ddFromString(view.xMin);
+    const dXMax = ddFromString(view.xMax);
+    const dYMin = ddFromString(view.yMin);
+    const dYMax = ddFromString(view.yMax);
+    const xRange = ddSub(dXMax, dXMin);
+    const yRange = ddSub(dYMax, dYMin);
+    const dragDXMin = ddFromString(dragViewXMin);
+    const dragDYMin = ddFromString(dragViewYMin);
 
-    const newXMin = dragDXMin.minus(new Decimal(dx).div(canvas.clientWidth).times(xRange));
-    const newYMin = dragDYMin.minus(new Decimal(dy).div(canvas.clientHeight).times(yRange));
-    view.xMin = newXMin.toString();
-    view.xMax = newXMin.plus(xRange).toString();
-    view.yMin = newYMin.toString();
-    view.yMax = newYMin.plus(yRange).toString();
+    const newXMin = ddSub(dragDXMin, ddMulNum(xRange, dx / canvas.clientWidth));
+    const newYMin = ddSub(dragDYMin, ddMulNum(yRange, dy / canvas.clientHeight));
+    view.xMin = ddToString(newXMin);
+    view.xMax = ddToString(ddAdd(newXMin, xRange));
+    view.yMin = ddToString(newYMin);
+    view.yMax = ddToString(ddAdd(newYMin, yRange));
   } else if (e.touches.length === 2) {
     const dist = Math.hypot(
       e.touches[1].clientX - e.touches[0].clientX,
@@ -762,27 +765,27 @@ function runAutoZoom() {
   if (!autoZoomActive) return;
   const [tx, ty] = AUTO_ZOOM_TARGETS[autoZoomTargetIdx % AUTO_ZOOM_TARGETS.length];
 
-  const dXMin = new Decimal(view.xMin);
-  const dXMax = new Decimal(view.xMax);
-  const dYMin = new Decimal(view.yMin);
-  const dYMax = new Decimal(view.yMax);
-  const currentCx = dXMin.plus(dXMax).div(2);
-  const currentCy = dYMin.plus(dYMax).div(2);
+  const dXMin = ddFromString(view.xMin);
+  const dXMax = ddFromString(view.xMax);
+  const dYMin = ddFromString(view.yMin);
+  const dYMax = ddFromString(view.yMax);
+  const currentCx = ddDivNum(ddAdd(dXMin, dXMax), 2);
+  const currentCy = ddDivNum(ddAdd(dYMin, dYMax), 2);
 
   // Smaller per-frame step for ~60fps smoothness (equivalent to old 0.003/frame @6fps)
   const moveStep = 0.0035;
   const zoomStep = 0.0005;
 
-  const xRange = dXMax.minus(dXMin);
-  const yRange = dYMax.minus(dYMin);
+  const xRange = ddSub(dXMax, dXMin);
+  const yRange = ddSub(dYMax, dYMin);
 
-  const targetX = new Decimal(tx);
-  const targetY = new Decimal(ty);
+  const targetX: DD = [tx, 0];
+  const targetY: DD = [ty, 0];
 
-  view.xMin = dXMin.plus(targetX.minus(currentCx).times(moveStep)).minus(xRange.times(zoomStep)).toString();
-  view.xMax = dXMax.plus(targetX.minus(currentCx).times(moveStep)).plus(xRange.times(zoomStep)).toString();
-  view.yMin = dYMin.plus(targetY.minus(currentCy).times(moveStep)).minus(yRange.times(zoomStep)).toString();
-  view.yMax = dYMax.plus(targetY.minus(currentCy).times(moveStep)).plus(yRange.times(zoomStep)).toString();
+  view.xMin = ddToString(ddSub(ddAdd(dXMin, ddMulNum(ddSub(targetX, currentCx), moveStep)), ddMulNum(xRange, zoomStep)));
+  view.xMax = ddToString(ddAdd(ddAdd(dXMax, ddMulNum(ddSub(targetX, currentCx), moveStep)), ddMulNum(xRange, zoomStep)));
+  view.yMin = ddToString(ddSub(ddAdd(dYMin, ddMulNum(ddSub(targetY, currentCy), moveStep)), ddMulNum(yRange, zoomStep)));
+  view.yMax = ddToString(ddAdd(ddAdd(dYMax, ddMulNum(ddSub(targetY, currentCy), moveStep)), ddMulNum(yRange, zoomStep)));
 
   updateZoom();
 
