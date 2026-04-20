@@ -38,6 +38,7 @@ const DEFAULT_VIEW: ViewState = {
   juliaIm: '0.1889',
   zoom: '1',
   orbitTrapMode: 0,
+  shadows: false,
 };
 
 let view: ViewState = { ...DEFAULT_VIEW };
@@ -209,6 +210,7 @@ function scheduleRender() {
         colorSpeed: view.colorSpeed,
         colorOffset: view.colorOffset,
         orbitTrapMode: view.orbitTrapMode,
+        shadows: view.shadows,
         refRe: refReStr,
         refIm: refImStr,
       };
@@ -359,6 +361,7 @@ function scheduleRecolor() {
         palette: view.palette,
         colorSpeed: view.colorSpeed,
         colorOffset: view.colorOffset,
+        shadows: view.shadows,
       };
       workers[workerIdx].postMessage(task);
       count++;
@@ -638,6 +641,7 @@ document.addEventListener('keydown', (e) => {
     case 'j': toggleJulia(); break;
     case 's': saveScreenshot(); break;
     case 'p': cyclePalette(); break;
+    case 'h': toggleShadows(); break;
     case 'a': toggleAutoZoom(); break;
     case 'c': toggleColorAnim(); break;
     case 'arrowleft':  zoomAt(cx * 0.6, cy, 1); break;
@@ -674,7 +678,11 @@ function updateIterDisplay() {
 }
 
 function resetView() {
+  const savedPalette = view.palette;
+  const savedColorSpeed = view.colorSpeed;
   view = { ...DEFAULT_VIEW };
+  view.palette = savedPalette;
+  view.colorSpeed = savedColorSpeed;
   const aspect = canvas.width / canvas.height;
   const yRange = 3.5 / aspect;
   view.yMin = String(-yRange / 2);
@@ -682,6 +690,10 @@ function resetView() {
   updateZoom();
   updateIterDisplay();
   updatePaletteUI();
+  const speedSlider = document.getElementById('speed-slider') as HTMLInputElement;
+  if (speedSlider) speedSlider.value = String(view.colorSpeed);
+  const speedDisplay = document.getElementById('speed-display');
+  if (speedDisplay) speedDisplay.textContent = String(view.colorSpeed);
   scheduleRender();
 }
 
@@ -812,6 +824,17 @@ function runAutoZoom() {
   autoZoomRaf = requestAnimationFrame(runAutoZoom);
 }
 
+// ─── 3D Shadows ───────────────────────────────────────────────────────────────
+
+function toggleShadows() {
+  view.shadows = !view.shadows;
+  const btn = document.getElementById('shadows-btn');
+  if (btn) btn.classList.toggle('btn-active', view.shadows);
+  const checkbox = document.getElementById('shadows-checkbox') as HTMLInputElement | null;
+  if (checkbox) checkbox.checked = view.shadows;
+  if (tileWorkerMap.size > 0) scheduleRecolor(); else scheduleRender();
+}
+
 // ─── Color animation ──────────────────────────────────────────────────────────
 
 function toggleColorAnim() {
@@ -871,12 +894,7 @@ function initSettingsPanel() {
     if (tileWorkerMap.size > 0) scheduleRecolor(); else scheduleRender();
   });
 
-  // Orbit Trap select
-  const orbitTrapSelect = document.getElementById('orbit-trap-select') as HTMLSelectElement;
-  orbitTrapSelect.addEventListener('change', () => {
-    view.orbitTrapMode = parseInt(orbitTrapSelect.value);
-    scheduleRender();
-  });
+  // Orbit Trap select (kept for bookmark compatibility — no UI exposed)
 
   // Color speed slider
   const speedSlider = document.getElementById('speed-slider') as HTMLInputElement;
@@ -887,6 +905,18 @@ function initSettingsPanel() {
     if (disp) disp.textContent = speedSlider.value;
     if (tileWorkerMap.size > 0) scheduleRecolor(); else scheduleRender();
   });
+
+  // 3D Shadows checkbox
+  const shadowsCheckbox = document.getElementById('shadows-checkbox') as HTMLInputElement | null;
+  if (shadowsCheckbox) {
+    shadowsCheckbox.checked = view.shadows;
+    shadowsCheckbox.addEventListener('change', () => {
+      view.shadows = shadowsCheckbox.checked;
+      const btn = document.getElementById('shadows-btn');
+      if (btn) btn.classList.toggle('btn-active', view.shadows);
+      if (tileWorkerMap.size > 0) scheduleRecolor(); else scheduleRender();
+    });
+  }
 
   // Julia controls
   const juliaReInput = document.getElementById('julia-re') as HTMLInputElement;
@@ -924,8 +954,8 @@ function initToolbar() {
   document.getElementById('reset-btn')?.addEventListener('click', resetView);
   document.getElementById('julia-btn')?.addEventListener('click', toggleJulia);
   document.getElementById('screenshot-btn')?.addEventListener('click', saveScreenshot);
-  document.getElementById('auto-zoom-btn')?.addEventListener('click', toggleAutoZoom);
   document.getElementById('color-anim-btn')?.addEventListener('click', toggleColorAnim);
+  document.getElementById('shadows-btn')?.addEventListener('click', toggleShadows);
 
   // Bookmarks
   document.getElementById('bookmark-btn')?.addEventListener('click', saveBookmark);
