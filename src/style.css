@@ -387,3 +387,28 @@ kbd {
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--clr-border); border-radius: 3px; }
+
+.precision-tier-hint {
+  position: fixed;
+  right: 0.65rem;
+  bottom: calc(52px + env(safe-area-inset-bottom));
+  z-index: 26;
+  padding: 0.2rem 0.5rem;
+  border-radius: 9999px;
+  border: 1px solid var(--clr-border);
+  background: rgba(10, 10, 20, 0.78);
+  color: #94a3b8;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  pointer-events: none;
+  user-select: none;
+}
+
+@media (max-width: 640px) {
+  .precision-tier-hint {
+    bottom: calc(56px + env(safe-area-inset-bottom));
+    font-size: 0.58rem;
+  }
+}

@@ -60,6 +60,12 @@ let totalTiles = 0;
 let isRendering = false;
 let colorAnimRaf = 0;
 let colorAnimActive = false;
+const precisionTierHintEl = document.getElementById('precision-tier-hint');
+
+function updatePrecisionTierHint(tier: PrecisionTier) {
+  if (!precisionTierHintEl) return;
+  precisionTierHintEl.textContent = `precision: ${tier.toUpperCase()}`;
+}
 
 // Tile queue for distributing work
 interface PendingTask { task: RenderTask; gen: number }
@@ -195,6 +201,7 @@ function scheduleRender() {
   const xRange = ddSub(dXMax, dXMin);
   const yRange = ddSub(dYMax, dYMin);
   const precisionTier = getPrecisionTier(xRange);
+  updatePrecisionTierHint(precisionTier);
 
   // View-centre reference point for perturbation-theory deep-zoom tiles
   const refReStr = ddToString(ddDivNum(ddAdd(dXMin, dXMax), 2));
