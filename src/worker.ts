@@ -226,7 +226,7 @@ function computeTilePerturbation(
         iter++;
 
         // z_{n+1} = Z_{n+1} + δ_{n+1}
-        // (orbitRe[n+1] is 0 when reference orbit escaped; array is zero-initialised)
+        // orbitRe[n+1] holds Z_{n+1} for n+1 ≤ refOrbitLen (always within loop).
         const zActRe = orbitRe[n + 1] + dRe;
         const zActIm = orbitIm[n + 1] + dIm;
         const r2 = zActRe * zActRe + zActIm * zActIm;
@@ -248,6 +248,33 @@ function computeTilePerturbation(
         }
 
         if (iter >= maxIter) break;
+      }
+
+      // When the reference orbit escaped early (refOrbitLen < maxIter) the
+      // perturbation approximation can break down for pixels close to the set
+      // boundary that need more iterations.  Continue from the last computed
+      // z = Z_{refOrbitLen} + δ using standard float64 iteration so they are
+      // correctly classified rather than being left as interior (-1).
+      if (val === -1.0 && refOrbitLen < maxIter && iter < maxIter && orbitTrapMode === 0) {
+        let zRe = orbitRe[refOrbitLen] + dRe;
+        let zIm = orbitIm[refOrbitLen] + dIm;
+        const cPixelRe = isJulia ? Number(juliaReStr) : (refRe[0] + dcReF);
+        const cPixelIm = isJulia ? Number(juliaImStr) : (refIm[0] + dcImF);
+
+        while (iter < maxIter) {
+          const x2 = zRe * zRe;
+          const y2 = zIm * zIm;
+          if (x2 + y2 > 100000.0) {
+            const log_zn = Math.log(x2 + y2) * 0.5;
+            const nu = Math.log(log_zn / Math.LN2) / Math.LN2;
+            val = iter + 1.0 - nu;
+            break;
+          }
+          const newZIm = 2.0 * zRe * zIm + cPixelIm;
+          zRe = x2 - y2 + cPixelRe;
+          zIm = newZIm;
+          iter++;
+        }
       }
 
       if (orbitTrapMode > 0) {
