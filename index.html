@@ -17,7 +17,7 @@
       🌌 Turbo Mandelbrot
     </span>
     <div style="flex:1"></div>
-    <button id="julia-btn"     class="btn">🌀 <span class="btn-label">Julia Set</span></button>
+    <button id="julia-btn" class="btn">🌀 <span class="btn-label"></span>J</button>
       <button id="color-anim-btn" class="btn">🌈 <span class="btn-label">Animate</span></button>
     <button id="shadows-btn"   class="btn">💡 <span class="btn-label">Shadows</span></button>
     <button id="reset-btn"     class="btn">🏠 <span class="btn-label">Reset</span></button>
@@ -34,6 +34,14 @@
 
   <!-- ─── HUD ──────────────────────────────────────────────── -->
   <div id="hud">
+    <div id="quick-iter-container" title="Iterations">
+      <input id="quick-iter-slider" type="range" min="32" max="10000" value="256" step="32"/>
+      <span class="quick-slider-label">ITERATIONS</span>
+    </div>
+    <div id="quick-speed-container" title="Color Speed">
+      <input id="quick-speed-slider" type="range" min="0.1" max="8" step="0.2" value="0.8"/>
+      <span class="quick-slider-label">C. SPEED</span>
+    </div>
     <div class="hud-chip">🔍 <span id="zoom-counter">1.0×</span></div>
     <div class="hud-chip">⟳ <span id="iter-counter">256</span> iter</div>
     <div id="julia-coords" class="hud-chip" style="display:none;color:#a5b4fc">c = …</div>
@@ -75,9 +83,9 @@
     <div>
       <label class="block text-xs uppercase tracking-wider text-gray-400 mb-1 flex justify-between">
         <span>Color Speed</span>
-        <span id="speed-display">3</span>×
+        <span id="speed-display">0.8</span>×
       </label>
-      <input id="speed-slider" type="range" min="0.5" max="30" step="0.5" value="3"
+      <input id="speed-slider" type="range" min="0.1" max="8" step="0.2" value="0.8"
              class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"/>
     </div>
     <div style="display:flex;align-items:center;justify-content:space-between;margin-top:0.5rem">
@@ -126,7 +134,6 @@
       <div class="shortcut-row"><span>Cycle palette</span><kbd>P</kbd></div>
       <div class="shortcut-row"><span>Save screenshot</span><kbd>S</kbd></div>
       <div class="shortcut-row"><span>Toggle 3D shadows</span><kbd>H</kbd></div>
-      <div class="shortcut-row"><span>Toggle auto-zoom</span><kbd>A</kbd></div>
       <div class="shortcut-row"><span>Toggle color animation</span><kbd>C</kbd></div>
       <div class="shortcut-row"><span>Increase iterations</span><kbd>+</kbd></div>
       <div class="shortcut-row"><span>Decrease iterations</span><kbd>-</kbd></div>

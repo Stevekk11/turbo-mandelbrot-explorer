@@ -5,8 +5,8 @@
   --clr-bg:      #0a0a0f;
   --clr-panel:   #12121a;
   --clr-border:  #2a2a3a;
-  --clr-accent:  #6366f1;
-  --clr-accent2: #a855f7;
+  --clr-accent: #33b48c;
+  --clr-accent2: #d70f41;
   --clr-text:    #e2e8f0;
   --clr-muted:   #94a3b8;
 }
@@ -59,6 +59,98 @@ html, body {
   background: linear-gradient(to top, rgba(10,10,20,0.92) 0%, transparent 100%);
   backdrop-filter: blur(4px);
   flex-wrap: wrap;
+}
+
+#quick-iter-container, #quick-speed-container {
+  display: flex;
+  align-items: center;
+  margin-right: 0.5rem;
+  position: relative;
+}
+
+.quick-slider-label {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  font-size: 0.6rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  color: rgba(255, 255, 255, 0.4);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  user-select: none;
+  z-index: 1;
+}
+
+#quick-iter-slider, #quick-speed-slider {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100px;
+  height: 24px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  outline: none;
+  overflow: hidden;
+  cursor: pointer;
+  border: 1px solid var(--clr-border);
+  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1), background 0.3s ease;
+}
+
+#quick-iter-slider:hover, #quick-speed-slider:hover {
+  background: rgba(255, 255, 255, 0.15);
+  width: 140px;
+}
+
+#quick-iter-slider::-webkit-slider-runnable-track,
+#quick-speed-slider::-webkit-slider-runnable-track {
+  height: 24px;
+  border-radius: 12px;
+}
+
+#quick-iter-slider::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 0;
+  height: 24px;
+  background: var(--clr-accent);
+  box-shadow: -200px 0 0 200px var(--clr-accent);
+}
+
+#quick-speed-slider::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 0;
+  height: 24px;
+  background: var(--clr-accent2);
+  box-shadow: -200px 0 0 200px var(--clr-accent2);
+}
+
+#quick-iter-slider::-moz-range-track,
+#quick-speed-slider::-moz-range-track {
+  height: 24px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+}
+
+#quick-iter-slider::-moz-range-progress {
+  height: 24px;
+  background: var(--clr-accent);
+  border-radius: 12px 0 0 12px;
+}
+
+#quick-speed-slider::-moz-range-progress {
+  height: 24px;
+  background: var(--clr-accent2);
+  border-radius: 12px 0 0 12px;
+}
+
+#quick-iter-slider::-moz-range-thumb,
+#quick-speed-slider::-moz-range-thumb {
+  width: 0;
+  height: 24px;
+  border: none;
+  background: transparent;
 }
 
 /* ── Progress bar ───────────────────────────────────────────────── */

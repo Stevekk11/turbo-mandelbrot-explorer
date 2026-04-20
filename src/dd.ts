@@ -89,10 +89,15 @@ export function ddDiv(a: DD, b: DD): DD {
  *    with values produced by the old decimal.js code)
  */
 export function ddFromString(s: string): DD {
-  // Fast path: "hi|lo" format written by ddToString
-  const sep = s.indexOf('|');
-  if (sep >= 0) {
-    return [Number(s.slice(0, sep)), Number(s.slice(sep + 1))];
+  // Fast path: hi|lo or QD-style x0|x1|x2|x3
+  const parts = s.split('|');
+  if (parts.length === 2) {
+    return [Number(parts[0]), Number(parts[1])];
+  }
+  if (parts.length === 4) {
+    const hi = Number(parts[0]);
+    const lo = Number(parts[1]) + Number(parts[2]) + Number(parts[3]);
+    return twoSum(hi, lo);
   }
 
   const neg = s.charCodeAt(0) === 45; // '-'

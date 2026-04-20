@@ -9,7 +9,8 @@
 
 import type {RecolorTask, RenderTask, ToWorkerMessage} from './types';
 import {PALETTE_SIZE, PALETTES, samplePaletteData} from './colorPalettes';
-import {type DD, ddAdd, ddSub, ddMul, ddMulNum, ddDivNum, ddFromString} from './dd';
+import {type DD, ddAdd, ddDivNum, ddFromString, ddMul, ddMulNum, ddSub} from './dd';
+import {type QD, qdAdd, qdDivNum, qdFromString, qdHi, qdMul, qdMulNum, qdSub} from './qd';
 
 // ─── WASM glue ────────────────────────────────────────────────────────────────
 
@@ -312,6 +313,151 @@ function computeTilePerturbation(
   }
 }
 
+function computeTilePerturbationQD(
+    xMinStr: string, yMinStr: string, xMaxStr: string, yMaxStr: string,
+    width: number, height: number, maxIter: number,
+    juliaReStr: string, juliaImStr: string, isJulia: boolean,
+    orbitTrapMode: number,
+    refReStr: string, refImStr: string,
+    buf: Float32Array
+): void {
+  const refRe = qdFromString(refReStr);
+  const refIm = qdFromString(refImStr);
+  const cRe_qd: QD = isJulia ? qdFromString(juliaReStr) : refRe;
+  const cIm_qd: QD = isJulia ? qdFromString(juliaImStr) : refIm;
+
+  const orbitRe = new Float64Array(maxIter + 1);
+  const orbitIm = new Float64Array(maxIter + 1);
+
+  let zRe: QD = isJulia ? refRe : [0, 0, 0, 0];
+  let zIm: QD = isJulia ? refIm : [0, 0, 0, 0];
+
+  orbitRe[0] = qdHi(zRe);
+  orbitIm[0] = qdHi(zIm);
+
+  let refOrbitLen = 0;
+  for (let n = 0; n < maxIter; n++) {
+    const zReHi = qdHi(zRe);
+    const zImHi = qdHi(zIm);
+    const r2 = zReHi * zReHi + zImHi * zImHi;
+    if (r2 > 100000.0) {
+      refOrbitLen = n;
+      break;
+    }
+    const newZRe = qdAdd(qdSub(qdMul(zRe, zRe), qdMul(zIm, zIm)), cRe_qd);
+    const newZIm = qdAdd(qdMulNum(qdMul(zRe, zIm), 2.0), cIm_qd);
+    zRe = newZRe;
+    zIm = newZIm;
+    refOrbitLen = n + 1;
+    orbitRe[n + 1] = qdHi(zRe);
+    orbitIm[n + 1] = qdHi(zIm);
+  }
+
+  const xMin_qd = qdFromString(xMinStr);
+  const xMax_qd = qdFromString(xMaxStr);
+  const yMin_qd = qdFromString(yMinStr);
+  const yMax_qd = qdFromString(yMaxStr);
+  const dx_qd = qdDivNum(qdSub(xMax_qd, xMin_qd), width);
+  const dy_qd = qdDivNum(qdSub(yMax_qd, yMin_qd), height);
+
+  for (let py = 0; py < height; py++) {
+    const pixelIm_qd = qdAdd(yMin_qd, qdMulNum(dy_qd, py));
+    const dcImQD = qdSub(pixelIm_qd, refIm);
+    const dcImF = dcImQD[0] + dcImQD[1] + dcImQD[2] + dcImQD[3];
+
+    for (let px = 0; px < width; px++) {
+      const pixelRe_qd = qdAdd(xMin_qd, qdMulNum(dx_qd, px));
+      const dcReQD = qdSub(pixelRe_qd, refRe);
+      const dcReF = dcReQD[0] + dcReQD[1] + dcReQD[2] + dcReQD[3];
+
+      let dRe = isJulia ? dcReF : 0.0;
+      let dIm = isJulia ? dcImF : 0.0;
+
+      const loopDcRe = isJulia ? 0.0 : dcReF;
+      const loopDcIm = isJulia ? 0.0 : dcImF;
+
+      let iter = 0;
+      let val = -1.0;
+      let minDist = 1e20;
+      let n = 0;
+
+      while (iter < maxIter) {
+        if (n >= refOrbitLen) break;
+
+        const ZnRe = orbitRe[n];
+        const ZnIm = orbitIm[n];
+
+        const a = 2.0 * ZnRe + dRe;
+        const b = 2.0 * ZnIm + dIm;
+        const newDRe = a * dRe - b * dIm + loopDcRe;
+        const newDIm = a * dIm + b * dRe + loopDcIm;
+        dRe = newDRe;
+        dIm = newDIm;
+        iter++;
+
+        const zActRe = orbitRe[n + 1] + dRe;
+        const zActIm = orbitIm[n + 1] + dIm;
+        const r2 = zActRe * zActRe + zActIm * zActIm;
+
+        if (orbitTrapMode > 0) {
+          const dist = orbitTrapMode === 1
+              ? Math.sqrt(r2)
+              : Math.abs(zActRe * zActIm);
+          if (dist < minDist) minDist = dist;
+        }
+
+        if (r2 > 100000.0) {
+          if (orbitTrapMode === 0) {
+            const log_zn = Math.log(r2) * 0.5;
+            const nu = Math.log(log_zn / Math.LN2) / Math.LN2;
+            val = iter + 1.0 - nu;
+          }
+          break;
+        }
+
+        const d2 = dRe * dRe + dIm * dIm;
+        const Zn1Re = orbitRe[n + 1];
+        const Zn1Im = orbitIm[n + 1];
+        if (d2 > Zn1Re * Zn1Re + Zn1Im * Zn1Im) {
+          dRe = zActRe - orbitRe[0];
+          dIm = zActIm - orbitIm[0];
+          n = 0;
+        } else {
+          n++;
+        }
+      }
+
+      if (val === -1.0 && refOrbitLen < maxIter && iter < maxIter && orbitTrapMode === 0) {
+        let zRe = orbitRe[refOrbitLen] + dRe;
+        let zIm = orbitIm[refOrbitLen] + dIm;
+        const cPixelRe = isJulia ? Number(juliaReStr) : (qdHi(refRe) + dcReF);
+        const cPixelIm = isJulia ? Number(juliaImStr) : (qdHi(refIm) + dcImF);
+
+        while (iter < maxIter) {
+          const x2 = zRe * zRe;
+          const y2 = zIm * zIm;
+          if (x2 + y2 > 100000.0) {
+            const log_zn = Math.log(x2 + y2) * 0.5;
+            const nu = Math.log(log_zn / Math.LN2) / Math.LN2;
+            val = iter + 1.0 - nu;
+            break;
+          }
+          const newZIm = 2.0 * zRe * zIm + cPixelIm;
+          zRe = x2 - y2 + cPixelRe;
+          zIm = newZIm;
+          iter++;
+        }
+      }
+
+      if (orbitTrapMode > 0) {
+        val = minDist < 1e19 ? Math.log(minDist + 1e-10) * -10.0 : -1.0;
+      }
+
+      buf[py * width + px] = val;
+    }
+  }
+}
+
 // ─── Per-tile iteration data cache ────────────────────────────────────────────
 // Keyed by `${tileX},${tileY}`. Cleared when main thread sends clearCache.
 
@@ -391,20 +537,19 @@ function renderTile(task: RenderTask): ArrayBuffer {
   } = task;
   const size = tileW * tileH;
 
-  // Extract the float64 hi-part from DD-format strings (e.g. "hi|lo") so we
-  // can pass valid f64 values to WASM and check whether this tile needs
-  // the high-precision path.
-  const xMinHi = ddFromString(xMin)[0];
-  const yMinHi = ddFromString(yMin)[0];
-  const xMaxHi = ddFromString(xMax)[0];
-  const yMaxHi = ddFromString(yMax)[0];
+  // Parse highs from QD/DD/number strings uniformly.
+  const xMinHi = qdHi(qdFromString(xMin));
+  const yMinHi = qdHi(qdFromString(yMin));
+  const xMaxHi = qdHi(qdFromString(xMax));
+  const yMaxHi = qdHi(qdFromString(yMax));
 
   const dxCheck = xMaxHi - xMinHi;
-  const needsHighPrec = dxCheck < 1e-13 || isNaN(dxCheck);
+  const inferredTier = !Number.isFinite(dxCheck) ? 'qd' : (Math.abs(dxCheck) < 1e-28 ? 'qd' : (Math.abs(dxCheck) < 1e-13 ? 'dd' : 'wasm'));
+  const precisionTier = task.precisionTier ?? inferredTier;
 
   let iterBuf: Float32Array;
 
-  if (wasmInstance && !needsHighPrec) {
+  if (wasmInstance && precisionTier === 'wasm') {
     // ─── WASM path ──────────────────────────────────────────────────────────
     const ptr = wasmInstance.exports.allocBuffer(tileW, tileH);
     wasmInstance.exports.computeTile(
@@ -417,7 +562,7 @@ function renderTile(task: RenderTask): ArrayBuffer {
       ptr,
       size
     );
-  } else if (!needsHighPrec) {
+  } else if (precisionTier === 'wasm') {
     // ─── JS fallback for normal-precision (WASM unavailable) ───────────────
     if (!_jsBuf || _jsBuf.length < size) {
       _jsBuf = new Float32Array(size);
@@ -429,7 +574,7 @@ function renderTile(task: RenderTask): ArrayBuffer {
       _jsBuf
     );
     iterBuf = _jsBuf;
-  } else {
+  } else if (precisionTier === 'dd') {
     // ─── Perturbation path for deep zoom ────────────────────────────────────
     // refRe / refIm are the view-centre coordinates supplied by main.ts.
     // Fall back to using the tile's own xMin/yMin if somehow absent.
@@ -445,6 +590,21 @@ function renderTile(task: RenderTask): ArrayBuffer {
       juliaRe, juliaIm, isJulia, orbitTrapMode || 0,
       refRe, refIm,
       _jsBuf
+    );
+    iterBuf = _jsBuf;
+  } else {
+    const refRe = task.refRe ?? xMin;
+    const refIm = task.refIm ?? yMin;
+
+    if (!_jsBuf || _jsBuf.length < size) {
+      _jsBuf = new Float32Array(size);
+    }
+    computeTilePerturbationQD(
+        xMin, yMin, xMax, yMax,
+        tileW, tileH, maxIter,
+        juliaRe, juliaIm, isJulia, orbitTrapMode || 0,
+        refRe, refIm,
+        _jsBuf
     );
     iterBuf = _jsBuf;
   }

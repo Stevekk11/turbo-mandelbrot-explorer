@@ -5,9 +5,19 @@
  */
 
 import './style.css';
-import type {Bookmark, RecolorTask, RenderResult, RenderTask, ViewState} from './types';
+import type {Bookmark, PrecisionTier, RecolorTask, RenderResult, RenderTask, ViewState} from './types';
 import {PALETTES} from './colorPalettes';
-import {type DD, ddAdd, ddDiv, ddDivNum, ddFromString, ddMulNum, ddSub, ddToString} from './dd';
+import {
+  type QD as DD,
+  qdAdd as ddAdd,
+  qdDiv as ddDiv,
+  qdDivNum as ddDivNum,
+  qdFromString as ddFromString,
+  qdHi,
+  qdMulNum as ddMulNum,
+  qdSub as ddSub,
+  qdToString as ddToString,
+} from './qd';
 
 // ─── Worker pool ──────────────────────────────────────────────────────────────
 
@@ -31,7 +41,7 @@ const DEFAULT_VIEW: ViewState = {
   yMin: '-1.25', yMax: '1.25',
   maxIter: 1000,
   palette: 0,
-  colorSpeed: 3,
+  colorSpeed: 0.8,
   colorOffset: 0.35,
   isJulia: false,
   juliaRe: '-0.7269',
@@ -152,6 +162,13 @@ window.addEventListener('resize', () => resizeCanvas());
 
 const TILE_SIZE = 256;
 
+function getPrecisionTier(xRange: DD): PrecisionTier {
+  const dx = Math.abs(qdHi(xRange));
+  if (!Number.isFinite(dx) || dx < 1e-28) return 'qd';
+  if (dx < 1e-13) return 'dd';
+  return 'wasm';
+}
+
 function scheduleRender() {
   if (!offscreen || workersReady < NUM_WORKERS) return;
   renderGen++;
@@ -177,6 +194,7 @@ function scheduleRender() {
   const dYMax = ddFromString(view.yMax);
   const xRange = ddSub(dXMax, dXMin);
   const yRange = ddSub(dYMax, dYMin);
+  const precisionTier = getPrecisionTier(xRange);
 
   // View-centre reference point for perturbation-theory deep-zoom tiles
   const refReStr = ddToString(ddDivNum(ddAdd(dXMin, dXMax), 2));
@@ -208,6 +226,7 @@ function scheduleRender() {
         colorOffset: view.colorOffset,
         orbitTrapMode: view.orbitTrapMode,
         shadows: view.shadows,
+        precisionTier,
         refRe: refReStr,
         refIm: refImStr,
       };
@@ -389,11 +408,26 @@ function zoomAt(screenX: number, screenY: number, factor: number, rerender = tru
 function updateZoom() {
   const dXMin = ddFromString(view.xMin);
   const dXMax = ddFromString(view.xMax);
-  const zoomD = ddDiv([3.5, 0], ddSub(dXMax, dXMin));
-  view.zoom = String(zoomD[0]);
+  const zoomD = ddDiv([3.5, 0, 0, 0], ddSub(dXMax, dXMin));
+  const z = zoomD[0];
+  view.zoom = String(z);
+
+  // Each 10x zoom increases iterations by ~256
+  // Formula: 256 + 128 * log10(zoom)
+  // Clamp between 32 and 10,000 (slider limits)
+  const autoIter = 256 + 256 * Math.log10(Math.max(1, z));
+  const clampedIter = Math.min(10000, Math.max(32, autoIter));
+
+  // Only update if it's a significant change to avoid jitter
+  // Use a smaller threshold or just snap to steps
+  const steppedIter = Math.floor(clampedIter / 32) * 32;
+  if (view.maxIter !== steppedIter) {
+    view.maxIter = steppedIter;
+    updateIterDisplay();
+  }
+
   const zoomEl = document.getElementById('zoom-counter');
   if (zoomEl) {
-    const z = zoomD[0];
     let label: string;
     if (z < 1000) label = `${z.toFixed(1)}×`;
     else if (z < 1e6) label = `${(z / 1000).toFixed(2)}K×`;
@@ -671,6 +705,8 @@ function updateIterDisplay() {
   if (display) display.textContent = `${view.maxIter}`;
   const slider = document.getElementById('iter-slider') as HTMLInputElement;
   if (slider) slider.value = String(view.maxIter);
+  const quickSlider = document.getElementById('quick-iter-slider') as HTMLInputElement;
+  if (quickSlider) quickSlider.value = String(view.maxIter);
 }
 
 function resetView() {
@@ -686,18 +722,24 @@ function resetView() {
   updateZoom();
   updateIterDisplay();
   updatePaletteUI();
+  updateSpeedUI();
+  scheduleRender();
+}
+
+function updateSpeedUI() {
   const speedSlider = document.getElementById('speed-slider') as HTMLInputElement;
   if (speedSlider) speedSlider.value = String(view.colorSpeed);
+  const quickSpeedSlider = document.getElementById('quick-speed-slider') as HTMLInputElement;
+  if (quickSpeedSlider) quickSpeedSlider.value = String(view.colorSpeed);
   const speedDisplay = document.getElementById('speed-display');
   if (speedDisplay) speedDisplay.textContent = String(view.colorSpeed);
-  scheduleRender();
 }
 
 function toggleJulia() {
   view.isJulia = !view.isJulia;
   const btn = document.getElementById('julia-btn');
   if (btn) {
-    btn.textContent = view.isJulia ? '🌀 Mandelbrot' : '🌀 Julia Set';
+    btn.textContent = view.isJulia ? '🌀 M' : '🌀 J';
     btn.classList.toggle('btn-active', view.isJulia);
   }
   const coordsEl = document.getElementById('julia-coords') as HTMLElement;
@@ -801,12 +843,21 @@ function initSettingsPanel() {
 
   // Max iterations slider
   const iterSlider = document.getElementById('iter-slider') as HTMLInputElement;
+  const quickIterSlider = document.getElementById('quick-iter-slider') as HTMLInputElement;
+  
   iterSlider.value = String(view.maxIter);
-  iterSlider.addEventListener('input', () => {
-    view.maxIter = parseInt(iterSlider.value);
+  if (quickIterSlider) quickIterSlider.value = String(view.maxIter);
+
+  const handleIterInput = (val: string) => {
+    view.maxIter = parseInt(val);
     updateIterDisplay();
     scheduleRender();
-  });
+  };
+
+  iterSlider.addEventListener('input', () => handleIterInput(iterSlider.value));
+  if (quickIterSlider) {
+    quickIterSlider.addEventListener('input', () => handleIterInput(quickIterSlider.value));
+  }
 
   // Palette select
   const paletteSelect = document.getElementById('palette-select') as HTMLSelectElement;
@@ -820,13 +871,23 @@ function initSettingsPanel() {
 
   // Color speed slider
   const speedSlider = document.getElementById('speed-slider') as HTMLInputElement;
-  speedSlider.value = String(view.colorSpeed);
-  speedSlider.addEventListener('input', () => {
-    view.colorSpeed = parseFloat(speedSlider.value);
-    const disp = document.getElementById('speed-display');
-    if (disp) disp.textContent = speedSlider.value;
+  const quickSpeedSlider = document.getElementById('quick-speed-slider') as HTMLInputElement;
+
+  if (speedSlider) speedSlider.value = String(view.colorSpeed);
+  if (quickSpeedSlider) quickSpeedSlider.value = String(view.colorSpeed);
+
+  const handleSpeedInput = (val: string) => {
+    view.colorSpeed = parseFloat(val);
+    updateSpeedUI();
     if (tileWorkerMap.size > 0) scheduleRecolor(); else scheduleRender();
-  });
+  };
+
+  if (speedSlider) {
+    speedSlider.addEventListener('input', () => handleSpeedInput(speedSlider.value));
+  }
+  if (quickSpeedSlider) {
+    quickSpeedSlider.addEventListener('input', () => handleSpeedInput(quickSpeedSlider.value));
+  }
 
   // 3D Shadows checkbox
   const shadowsCheckbox = document.getElementById('shadows-checkbox') as HTMLInputElement | null;

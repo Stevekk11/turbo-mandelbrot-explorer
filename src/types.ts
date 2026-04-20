@@ -61,9 +61,11 @@ export interface RenderTask {
   orbitTrapMode: number;
   /** 3D shadow/lighting overlay enabled */
   shadows: boolean;
+  /** Explicit precision path for this tile. */
+  precisionTier?: PrecisionTier;
   /**
-   * View-centre coordinates in DD string format ("hi|lo") used as the
-   * perturbation reference point for deep-zoom tiles.
+   * View-centre coordinates used as the perturbation reference point.
+   * DD format: "hi|lo"; QD format: "x0|x1|x2|x3".
    */
   refRe?: string;
   refIm?: string;
@@ -140,3 +142,6 @@ export interface Bookmark {
   juliaIm: string;
   orbitTrapMode: number;
 }
+
+/** Precision tiers for rendering paths */
+export type PrecisionTier = 'wasm' | 'dd' | 'qd';
