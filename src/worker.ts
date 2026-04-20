@@ -295,12 +295,15 @@ const iterCache = new Map<string, Float32Array>();
 
 function applyColorization(
   iterBuf: Float32Array,
-  size: number,
+  tileW: number,
+  tileH: number,
   palette: number,
   colorSpeed: number,
-  colorOffset: number
+  colorOffset: number,
+  shadows: boolean
 ): Uint8ClampedArray {
   const paletteData = PALETTES[palette].data;
+  const size = tileW * tileH;
   const rgba = new Uint8ClampedArray(size * 4);
 
   for (let i = 0; i < size; i++) {
@@ -318,9 +321,35 @@ function applyColorization(
     const b0 = idx0 * 4;
     const b1 = idx1 * 4;
     const o = i * 4;
-    rgba[o]     = (paletteData[b0]     + (paletteData[b1]     - paletteData[b0])     * frac) | 0;
-    rgba[o + 1] = (paletteData[b0 + 1] + (paletteData[b1 + 1] - paletteData[b0 + 1]) * frac) | 0;
-    rgba[o + 2] = (paletteData[b0 + 2] + (paletteData[b1 + 2] - paletteData[b0 + 2]) * frac) | 0;
+    let r = (paletteData[b0]     + (paletteData[b1]     - paletteData[b0])     * frac) | 0;
+    let g = (paletteData[b0 + 1] + (paletteData[b1 + 1] - paletteData[b0 + 1]) * frac) | 0;
+    let b = (paletteData[b0 + 2] + (paletteData[b1 + 2] - paletteData[b0 + 2]) * frac) | 0;
+
+    if (shadows) {
+      const py = Math.floor(i / tileW);
+      const px = i % tileW;
+      // Sample neighbours, clamping to tile edges; use val for interior pixels
+      const vL = px > 0          ? (iterBuf[py * tileW + (px - 1)] < 0 ? val : iterBuf[py * tileW + (px - 1)]) : val;
+      const vR = px < tileW - 1  ? (iterBuf[py * tileW + (px + 1)] < 0 ? val : iterBuf[py * tileW + (px + 1)]) : val;
+      const vU = py > 0          ? (iterBuf[(py - 1) * tileW + px]  < 0 ? val : iterBuf[(py - 1) * tileW + px])  : val;
+      const vD = py < tileH - 1  ? (iterBuf[(py + 1) * tileW + px]  < 0 ? val : iterBuf[(py + 1) * tileW + px])  : val;
+      // Surface gradient → normal
+      const nx = -(vR - vL);
+      const ny = -(vD - vU);
+      const nz = 2.0;
+      const nlen = Math.sqrt(nx * nx + ny * ny + nz * nz);
+      // Light from upper-left
+      const lx = 0.5774, ly = 0.5774, lz = 0.5774;
+      const dot = (nx / nlen) * lx + (ny / nlen) * ly + (nz / nlen) * lz;
+      const light = Math.max(0.25, Math.min(1.0, dot));
+      r = Math.min(255, (r * light) | 0);
+      g = Math.min(255, (g * light) | 0);
+      b = Math.min(255, (b * light) | 0);
+    }
+
+    rgba[o]     = r;
+    rgba[o + 1] = g;
+    rgba[o + 2] = b;
     rgba[o + 3] = 255;
   }
   return rgba;
@@ -332,7 +361,7 @@ let _jsBuf: Float32Array | null = null;
 
 function renderTile(task: RenderTask): ArrayBuffer {
   const { tileX, tileY, tileW, tileH, xMin, yMin, xMax, yMax, maxIter,
-    juliaRe, juliaIm, isJulia, palette, colorSpeed, colorOffset, orbitTrapMode
+    juliaRe, juliaIm, isJulia, palette, colorSpeed, colorOffset, orbitTrapMode, shadows
   } = task;
   const size = tileW * tileH;
 
@@ -397,15 +426,14 @@ function renderTile(task: RenderTask): ArrayBuffer {
   // Cache a copy of the iteration data for fast recoloring later
   iterCache.set(`${tileX},${tileY}`, iterBuf.slice(0));
 
-  return applyColorization(iterBuf, size, palette, colorSpeed, colorOffset).buffer as ArrayBuffer;
+  return applyColorization(iterBuf, tileW, tileH, palette, colorSpeed, colorOffset, shadows ?? false).buffer as ArrayBuffer;
 }
 
 function recolorTile(task: RecolorTask): ArrayBuffer | null {
   const key = `${task.tileX},${task.tileY}`;
   const iterBuf = iterCache.get(key);
   if (!iterBuf) return null;
-  const size = task.tileW * task.tileH;
-  return applyColorization(iterBuf, size, task.palette, task.colorSpeed, task.colorOffset).buffer as ArrayBuffer;
+  return applyColorization(iterBuf, task.tileW, task.tileH, task.palette, task.colorSpeed, task.colorOffset, task.shadows ?? false).buffer as ArrayBuffer;
 }
 
 // ─── Message handler ──────────────────────────────────────────────────────────

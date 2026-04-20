@@ -25,6 +25,8 @@ export interface ViewState {
   /** Current zoom level (derived, for display) */
   zoom: string;
   orbitTrapMode: number;
+  /** 3D shadow/lighting overlay enabled */
+  shadows: boolean;
 }
 
 /** Message sent to a worker requesting tile rendering */
@@ -57,6 +59,8 @@ export interface RenderTask {
   /** Color offset for animation */
   colorOffset: number;
   orbitTrapMode: number;
+  /** 3D shadow/lighting overlay enabled */
+  shadows: boolean;
   /**
    * View-centre coordinates in DD string format ("hi|lo") used as the
    * perturbation reference point for deep-zoom tiles.
@@ -77,6 +81,8 @@ export interface RecolorTask {
   palette: number;
   colorSpeed: number;
   colorOffset: number;
+  /** 3D shadow/lighting overlay enabled */
+  shadows: boolean;
 }
 
 /** Broadcast to all workers: discard their cached iteration data */
