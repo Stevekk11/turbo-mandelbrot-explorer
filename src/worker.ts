@@ -640,6 +640,13 @@ self.onmessage = async (e: MessageEvent<ToWorkerMessage>) => {
     return;
   }
 
+  if (msg.type === 'updatePalette') {
+    if (Number.isInteger(msg.index) && msg.index >= 0 && msg.index < PALETTES.length) {
+      PALETTES[msg.index].data = new Uint8ClampedArray(msg.data);
+    }
+    return;
+  }
+
   if (msg.type === 'render') {
     const buf = renderTile(msg);
     // Transfer buffer ownership back to main thread (zero-copy)

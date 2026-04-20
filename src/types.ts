@@ -92,6 +92,14 @@ export interface ClearCacheMessage {
   type: 'clearCache';
 }
 
+/** Broadcast to all workers: replace palette data at the given index */
+export interface UpdatePaletteDataMessage {
+  type: 'updatePalette';
+  index: number;
+  /** Raw RGBA lookup table (transferable ArrayBuffer, PALETTE_SIZE × 4 bytes) */
+  data: ArrayBuffer;
+}
+
 /** Message sent from a worker with a completed tile */
 export interface RenderResult {
   type: 'result';
@@ -116,7 +124,7 @@ export interface ReadyMessage {
   type: 'ready';
 }
 
-export type ToWorkerMessage = InitMessage | RenderTask | RecolorTask | ClearCacheMessage;
+export type ToWorkerMessage = InitMessage | RenderTask | RecolorTask | ClearCacheMessage | UpdatePaletteDataMessage;
 export type FromWorkerMessage = ReadyMessage | RenderResult;
 
 /** Named palette definition */
