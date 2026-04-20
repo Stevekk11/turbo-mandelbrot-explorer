@@ -6,7 +6,7 @@
 
 import './style.css';
 import type {Bookmark, PrecisionTier, RecolorTask, RenderResult, RenderTask, ViewState} from './types';
-import {PALETTES} from './colorPalettes';
+import {generateRandomPalette, PALETTES, RANDOM_PALETTE_INDEX} from './colorPalettes';
 import {type QD, qdAdd, qdDiv, qdDivNum, qdFromString, qdHi, qdMulNum, qdSub, qdToString,} from './qd';
 
 // ─── Worker pool ──────────────────────────────────────────────────────────────
@@ -765,6 +765,20 @@ function cyclePalette() {
   if (tileWorkerMap.size > 0) scheduleRecolor(); else scheduleRender();
 }
 
+function randomizePalette() {
+  const newData = generateRandomPalette();
+  // Update the main-thread palette slot
+  PALETTES[RANDOM_PALETTE_INDEX].data = newData;
+  // Broadcast updated data to every worker (transfer a copy per worker)
+  workers.forEach(w => {
+    const buf = newData.buffer.slice(0) as ArrayBuffer;
+    w.postMessage({ type: 'updatePalette', index: RANDOM_PALETTE_INDEX, data: buf }, [buf]);
+  });
+  view.palette = RANDOM_PALETTE_INDEX;
+  updatePaletteUI();
+  if (tileWorkerMap.size > 0) scheduleRecolor(); else scheduleRender();
+}
+
 function updatePaletteUI() {
   const sel = document.getElementById('palette-select') as HTMLSelectElement;
   if (sel) sel.value = String(view.palette);
@@ -951,6 +965,7 @@ function initToolbar() {
   document.getElementById('screenshot-btn')?.addEventListener('click', saveScreenshot);
   document.getElementById('color-anim-btn')?.addEventListener('click', toggleColorAnim);
   document.getElementById('shadows-btn')?.addEventListener('click', toggleShadows);
+  document.getElementById('random-palette-btn')?.addEventListener('click', randomizePalette);
 
   // Bookmarks
   document.getElementById('bookmark-btn')?.addEventListener('click', saveBookmark);

@@ -200,7 +200,46 @@ export const PALETTES: PaletteDef[] = [
   { name: 'Fire',          icon: '🔥', data: buildPalette(fireStops) },
   { name: 'Ocean Deep',    icon: '🌊', data: buildPalette(oceanStops) },
   { name: 'Monochrome',    icon: '◐',  data: buildMonochrome() },
+  { name: 'Random',        icon: '🎲',  data: new Uint8ClampedArray(PALETTE_SIZE * 4) },
 ];
+
+/** Index of the mutable random palette slot in PALETTES */
+export const RANDOM_PALETTE_INDEX = 7;
+
+function hslToRgb(h: number, s: number, l: number): [number, number, number] {
+  const c = (1 - Math.abs(2 * l - 1)) * s;
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+  const m = l - c / 2;
+  let r = 0, g = 0, b = 0;
+  if      (h < 60)  { r = c; g = x; b = 0; }
+  else if (h < 120) { r = x; g = c; b = 0; }
+  else if (h < 180) { r = 0; g = c; b = x; }
+  else if (h < 240) { r = 0; g = x; b = c; }
+  else if (h < 300) { r = x; g = 0; b = c; }
+  else              { r = c; g = 0; b = x; }
+  return [Math.round((r + m) * 255), Math.round((g + m) * 255), Math.round((b + m) * 255)];
+}
+
+/** Generate a vivid random palette and return its RGBA lookup table. */
+export function generateRandomPalette(): Uint8ClampedArray {
+  const numMidStops = 3 + Math.floor(Math.random() * 5); // 3–7 colourful stops
+  const stops: Stop[] = [[0.0, 0, 0, 0]];
+
+  // Evenly spaced positions with small random jitter
+  for (let i = 1; i <= numMidStops; i++) {
+    const base = i / (numMidStops + 1);
+    const pos = Math.max(0.01, Math.min(0.99, base + (Math.random() - 0.5) * 0.12));
+    const hue = Math.random() * 360;
+    const sat = 0.6 + Math.random() * 0.4;
+    const lig = 0.35 + Math.random() * 0.4;
+    const [r, g, b] = hslToRgb(hue, sat, lig);
+    stops.push([pos, r, g, b]);
+  }
+  stops.sort((a, b) => a[0] - b[0]);
+  stops.push([1.0, 0, 0, 0]);
+
+  return buildPalette(stops);
+}
 
 /**
  * Map a smooth iteration value to an RGBA color.
