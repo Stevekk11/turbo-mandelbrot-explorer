@@ -7,7 +7,7 @@
 import './style.css';
 import type {Bookmark, RecolorTask, RenderResult, RenderTask, ViewState} from './types';
 import {PALETTES} from './colorPalettes';
-import {type DD, ddAdd, ddSub, ddMulNum, ddDivNum, ddDiv, ddFromString, ddToString} from './dd';
+import {type DD, ddAdd, ddDiv, ddDivNum, ddFromString, ddMulNum, ddSub, ddToString} from './dd';
 
 // ─── Worker pool ──────────────────────────────────────────────────────────────
 
@@ -48,9 +48,6 @@ let pendingTiles = 0;
 let completedTiles = 0;
 let totalTiles = 0;
 let isRendering = false;
-let autoZoomActive = false;
-let autoZoomRaf = 0;
-let autoZoomFrame = 0;
 let colorAnimRaf = 0;
 let colorAnimActive = false;
 
@@ -72,7 +69,7 @@ let activeTilesGen = 0;
 let activeTilesIsRecolor = false;
 
 function startTileAnimation(gen: number, isRecolor: boolean) {
-  if (autoZoomActive || colorAnimActive) return;
+  if (colorAnimActive) return;
   renderSnapshot = new OffscreenCanvas(canvas.width, canvas.height);
   renderSnapshot.getContext('2d')!.drawImage(canvas, 0, 0);
   activeTiles = [];
@@ -267,7 +264,7 @@ function handleWorkerMessage(e: MessageEvent) {
     const isCurrentRender  = result.gen === renderGen;
     const isCurrentRecolor = result.gen === recolorGen;
 
-    const shouldAnimate = !autoZoomActive && !colorAnimActive;
+    const shouldAnimate = !colorAnimActive;
 
     if ((isCurrentRender || isCurrentRecolor) && offCtx && offscreen) {
       const imgData = new ImageData(
@@ -642,7 +639,6 @@ document.addEventListener('keydown', (e) => {
     case 's': saveScreenshot(); break;
     case 'p': cyclePalette(); break;
     case 'h': toggleShadows(); break;
-    case 'a': toggleAutoZoom(); break;
     case 'c': toggleColorAnim(); break;
     case 'arrowleft':  zoomAt(cx * 0.6, cy, 1); break;
     case 'arrowright': zoomAt(cx * 1.4, cy, 1); break;
@@ -750,80 +746,6 @@ function saveScreenshot() {
   link.href = canvas.toDataURL('image/png');
   link.click();
 }
-
-// ─── Auto-zoom ────────────────────────────────────────────────────────────────
-
-const AUTO_ZOOM_TARGETS: [number, number][] = [
-  [-0.7269, 0.1889],   // Seahorse valley
-  [-0.5555, 0.6321],   // Lightning
-  [0.2549, 0.0005],    // Elephant valley
-  [-1.3736, 0.0877],   // Satellite
-];
-let autoZoomTargetIdx = 0;
-
-function toggleAutoZoom() {
-  autoZoomActive = !autoZoomActive;
-  const btn = document.getElementById('auto-zoom-btn');
-  if (btn) btn.classList.toggle('btn-active', autoZoomActive);
-  if (autoZoomActive) {
-    autoZoomFrame = 0;
-    runAutoZoom();
-  } else {
-    cancelAnimationFrame(autoZoomRaf);
-  }
-}
-
-function runAutoZoom() {
-  if (!autoZoomActive) return;
-  const [tx, ty] = AUTO_ZOOM_TARGETS[autoZoomTargetIdx % AUTO_ZOOM_TARGETS.length];
-
-  const dXMin = ddFromString(view.xMin);
-  const dXMax = ddFromString(view.xMax);
-  const dYMin = ddFromString(view.yMin);
-  const dYMax = ddFromString(view.yMax);
-  const currentCx = ddDivNum(ddAdd(dXMin, dXMax), 2);
-  const currentCy = ddDivNum(ddAdd(dYMin, dYMax), 2);
-
-  // Smaller per-frame step for ~60fps smoothness (equivalent to old 0.003/frame @6fps)
-  const moveStep = 0.0035;
-  const zoomStep = 0.0005;
-
-  const xRange = ddSub(dXMax, dXMin);
-  const yRange = ddSub(dYMax, dYMin);
-
-  const targetX: DD = [tx, 0];
-  const targetY: DD = [ty, 0];
-
-  view.xMin = ddToString(ddSub(ddAdd(dXMin, ddMulNum(ddSub(targetX, currentCx), moveStep)), ddMulNum(xRange, zoomStep)));
-  view.xMax = ddToString(ddAdd(ddAdd(dXMax, ddMulNum(ddSub(targetX, currentCx), moveStep)), ddMulNum(xRange, zoomStep)));
-  view.yMin = ddToString(ddSub(ddAdd(dYMin, ddMulNum(ddSub(targetY, currentCy), moveStep)), ddMulNum(yRange, zoomStep)));
-  view.yMax = ddToString(ddAdd(ddAdd(dYMax, ddMulNum(ddSub(targetY, currentCy), moveStep)), ddMulNum(yRange, zoomStep)));
-
-  updateZoom();
-
-  autoZoomFrame++;
-
-  // Every 10 frames trigger a high-quality re-render; in between, scale the existing
-  // render to simulate zoom — this gives smooth 60fps motion with ~6fps full renders.
-  if (autoZoomFrame % 10 === 0) {
-    scheduleRender();
-  } else if (offscreen) {
-    // Apply a tiny zoom-in scale centred on the canvas for visual continuity
-    const cx = canvas.width / 2;
-    const cy = canvas.height / 2;
-    const s = 1 + zoomStep * 2;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.save();
-    ctx.translate(cx, cy);
-    ctx.scale(s, s);
-    ctx.translate(-cx, -cy);
-    ctx.drawImage(offscreen, 0, 0);
-    ctx.restore();
-  }
-
-  autoZoomRaf = requestAnimationFrame(runAutoZoom);
-}
-
 // ─── 3D Shadows ───────────────────────────────────────────────────────────────
 
 function toggleShadows() {

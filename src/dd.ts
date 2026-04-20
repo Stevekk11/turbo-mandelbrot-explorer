@@ -4,9 +4,7 @@
  * Each DD number is a pair [hi, lo] where the true value is hi + lo,
  * with |lo| ≤ ulp(hi) / 2.  Based on the Dekker (1971) and Knuth (1997)
  * error-free-transformation algorithms.
- *
- * This replaces decimal.js for coordinate arithmetic in the Mandelbrot
- * explorer, giving a dramatic speed improvement while preserving enough
+ * giving a dramatic speed improvement while preserving enough
  * precision to zoom to roughly 10^31.
  */
 
