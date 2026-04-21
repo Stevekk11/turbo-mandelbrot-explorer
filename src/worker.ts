@@ -21,7 +21,8 @@ interface MandelbrotWasm {
     computeTile: (
       xMin: number, yMin: number, xMax: number, yMax: number,
       width: number, height: number, maxIter: number,
-      juliaRe: number, juliaIm: number, isJulia: number, orbitTrapMode: number
+      juliaRe: number, juliaIm: number, isJulia: number, orbitTrapMode: number,
+      fractalType: number
     ) => void;
     getBufferSize: () => number;
   };
@@ -57,7 +58,7 @@ function computeTileJS(
   xMin: number, yMin: number, xMax: number, yMax: number,
   width: number, height: number, maxIter: number,
   juliaRe: number, juliaIm: number, isJulia: boolean, orbitTrapMode: number,
-  buf: Float32Array
+  buf: Float32Array, fractalType = 0
 ): void {
   const dx = (xMax - xMin) / width;
   const dy = (yMax - yMin) / height;
@@ -78,8 +79,20 @@ function computeTileJS(
       let minDist = 1e20;
 
       while (x2 + y2 <= 100000.0 && iter < maxIter) {
-        zIm = 2.0 * zRe * zIm + cIm;
-        zRe = x2 - y2 + cRe;
+        if (fractalType === 1) {
+          // Burning Ship: take absolute values before squaring
+          zIm = 2.0 * Math.abs(zRe) * Math.abs(zIm) + cIm;
+          zRe = x2 - y2 + cRe;
+        } else if (fractalType === 2) {
+          // Tricorn (Mandelbar): z_{n+1} = conj(z_n)² + c
+          // conj(z_n)² = (zRe - i·zIm)² = (zRe² - zIm²) - i·2·zRe·zIm
+          zIm = -2.0 * zRe * zIm + cIm;
+          zRe = x2 - y2 + cRe;
+        } else {
+          // Standard Mandelbrot
+          zIm = 2.0 * zRe * zIm + cIm;
+          zRe = x2 - y2 + cRe;
+        }
         x2 = zRe * zRe;
         y2 = zIm * zIm;
         iter++;
@@ -537,6 +550,7 @@ function renderTile(task: RenderTask): ArrayBuffer {
   const { tileX, tileY, tileW, tileH, xMin, yMin, xMax, yMax, maxIter,
     juliaRe, juliaIm, isJulia, palette, colorSpeed, colorOffset, orbitTrapMode, shadows
   } = task;
+  const fractalType = task.fractalType ?? 0;
   const size = tileW * tileH;
 
   // Parse highs from QD/DD/number strings uniformly.
@@ -547,7 +561,10 @@ function renderTile(task: RenderTask): ArrayBuffer {
 
   const dxCheck = xMaxHi - xMinHi;
   const inferredTier = !Number.isFinite(dxCheck) ? 'qd' : (Math.abs(dxCheck) < 1e-28 ? 'qd' : (Math.abs(dxCheck) < 2e-13 ? 'dd' : 'wasm'));
-  const precisionTier = task.precisionTier ?? inferredTier;
+  // Perturbation theory only applies to Mandelbrot (fractalType 0); fall back to
+  // JS for Burning Ship and Tricorn which have non-analytic iteration formulas.
+  const baseTier = task.precisionTier ?? inferredTier;
+  const precisionTier = fractalType !== 0 && baseTier !== 'wasm' ? 'wasm' : baseTier;
 
   let iterBuf: Float32Array;
 
@@ -557,7 +574,8 @@ function renderTile(task: RenderTask): ArrayBuffer {
     wasmInstance.exports.computeTile(
       xMinHi, yMinHi, xMaxHi, yMaxHi,
       tileW, tileH, maxIter,
-      Number(juliaRe), Number(juliaIm), isJulia ? 1 : 0, orbitTrapMode || 0
+      Number(juliaRe), Number(juliaIm), isJulia ? 1 : 0, orbitTrapMode || 0,
+      fractalType
     );
     iterBuf = new Float32Array(
       wasmInstance.exports.memory.buffer,
@@ -573,7 +591,7 @@ function renderTile(task: RenderTask): ArrayBuffer {
       xMinHi, yMinHi, xMaxHi, yMaxHi,
       tileW, tileH, maxIter,
       Number(juliaRe), Number(juliaIm), isJulia, orbitTrapMode || 0,
-      _jsBuf
+      _jsBuf, fractalType
     );
     iterBuf = _jsBuf;
   } else if (precisionTier === 'dd') {

@@ -27,6 +27,8 @@ export interface ViewState {
   orbitTrapMode: number;
   /** 3D shadow/lighting overlay enabled */
   shadows: boolean;
+  /** Fractal type: 0=Mandelbrot, 1=Burning Ship, 2=Tricorn */
+  fractalType: number;
 }
 
 /** Message sent to a worker requesting tile rendering */
@@ -61,6 +63,8 @@ export interface RenderTask {
   orbitTrapMode: number;
   /** 3D shadow/lighting overlay enabled */
   shadows: boolean;
+  /** Fractal type: 0=Mandelbrot, 1=Burning Ship, 2=Tricorn */
+  fractalType: number;
   /** Explicit precision path for this tile. */
   precisionTier?: PrecisionTier;
   /**
