@@ -39,6 +39,7 @@ const DEFAULT_VIEW: ViewState = {
   zoom: '1',
   orbitTrapMode: 0,
   shadows: false,
+  fractalType: 0,
 };
 
 let view: ViewState = { ...DEFAULT_VIEW };
@@ -222,6 +223,7 @@ function scheduleRender() {
         colorOffset: view.colorOffset,
         orbitTrapMode: view.orbitTrapMode,
         shadows: view.shadows,
+        fractalType: view.fractalType,
         precisionTier,
         refRe: refReStr,
         refIm: refImStr,
@@ -724,9 +726,11 @@ function updateIterDisplay() {
 function resetView() {
   const savedPalette = view.palette;
   const savedColorSpeed = view.colorSpeed;
+  const savedFractalType = view.fractalType;
   view = { ...DEFAULT_VIEW };
   view.palette = savedPalette;
   view.colorSpeed = savedColorSpeed;
+  view.fractalType = savedFractalType;
   const aspect = canvas.width / canvas.height;
   const yRange = 3.5 / aspect;
   view.yMin = String(-yRange / 2);
@@ -782,6 +786,11 @@ function randomizePalette() {
 function updatePaletteUI() {
   const sel = document.getElementById('palette-select') as HTMLSelectElement;
   if (sel) sel.value = String(view.palette);
+}
+
+function updateFractalTypeUI() {
+  const sel = document.getElementById('fractal-type-select') as HTMLSelectElement;
+  if (sel) sel.value = String(view.fractalType);
 }
 
 // ─── Orbit Trap Mode ──────────────────────────────────────────────────────────
@@ -892,6 +901,16 @@ function initSettingsPanel() {
     // Recolour in place if iteration data is cached; otherwise full re-render
     if (tileWorkerMap.size > 0) scheduleRecolor(); else scheduleRender();
   });
+
+  // Fractal type select
+  const fractalTypeSelect = document.getElementById('fractal-type-select') as HTMLSelectElement;
+  if (fractalTypeSelect) {
+    fractalTypeSelect.value = String(view.fractalType);
+    fractalTypeSelect.addEventListener('change', () => {
+      view.fractalType = parseInt(fractalTypeSelect.value);
+      scheduleRender();
+    });
+  }
 
   // Orbit Trap select (kept for bookmark compatibility — no UI exposed)
 

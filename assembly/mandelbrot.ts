@@ -35,12 +35,13 @@ export function allocBuffer(width: i32, height: i32): i32 {
  * @param juliaIm Imaginary part of Julia constant (ignored for Mandelbrot)
  * @param isJulia Non-zero for Julia set, zero for Mandelbrot
  * @param orbitTrapMode Orbit trap mode (0=none, 1=point, 2=cross)
+ * @param fractalType Fractal formula (0=Mandelbrot, 1=Burning Ship, 2=Tricorn)
  */
 export function computeTile(
   xMin: f64, yMin: f64, xMax: f64, yMax: f64,
   width: i32, height: i32, maxIter: i32,
   juliaRe: f64, juliaIm: f64, isJulia: i32,
-  orbitTrapMode: i32
+  orbitTrapMode: i32, fractalType: i32
 ): void {
   const dx: f64 = (xMax - xMin) / <f64>width;
   const dy: f64 = (yMax - yMin) / <f64>height;
@@ -64,8 +65,20 @@ export function computeTile(
       let minDist: f64 = 1e20;
 
       while (x2 + y2 <= 100000.0 && iter < maxIter) {
-        zIm = 2.0 * zRe * zIm + cIm;
-        zRe = x2 - y2 + cRe;
+        if (fractalType == 1) {
+          // Burning Ship: take absolute values before squaring
+          zIm = 2.0 * Math.abs(zRe) * Math.abs(zIm) + cIm;
+          zRe = x2 - y2 + cRe;
+        } else if (fractalType == 2) {
+          // Tricorn (Mandelbar): z_{n+1} = conj(z_n)² + c
+          // conj(z_n)² = (zRe - i·zIm)² = (zRe² - zIm²) - i·2·zRe·zIm
+          zIm = -2.0 * zRe * zIm + cIm;
+          zRe = x2 - y2 + cRe;
+        } else {
+          // Standard Mandelbrot
+          zIm = 2.0 * zRe * zIm + cIm;
+          zRe = x2 - y2 + cRe;
+        }
         x2 = zRe * zRe;
         y2 = zIm * zIm;
         iter++;

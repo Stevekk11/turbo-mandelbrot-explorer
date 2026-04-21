@@ -60,7 +60,16 @@
 
     <!-- Rendering -->
     <div class="section-title">🧮 Rendering</div>
-    <label class="ctrl-label">Max Iterations</label>
+    <label class="ctrl-label">Fractal Type</label>
+    <div>
+      <select id="fractal-type-select"
+              class="block w-full bg-gray-700 border-none rounded text-sm px-2 py-1 focus:ring focus:ring-blue-500">
+        <option value="0">🌌 Mandelbrot</option>
+        <option value="1">🔥 Burning Ship</option>
+        <option value="2">❄️ Tricorn</option>
+      </select>
+    </div>
+    <label class="ctrl-label" style="margin-top:0.5rem">Max Iterations</label>
     <div class="ctrl-row">
       <input id="iter-slider" type="range" min="32" max="10000" value="256" step="32"/>
       <span class="ctrl-value"><span id="iter-display">256</span></span>
