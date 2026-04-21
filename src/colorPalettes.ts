@@ -222,7 +222,7 @@ function hslToRgb(h: number, s: number, l: number): [number, number, number] {
 
 /** Generate a vivid random palette and return its RGBA lookup table. */
 export function generateRandomPalette(): Uint8ClampedArray {
-  const numMidStops = 3 + Math.floor(Math.random() * 5); // 3–7 colorful stops
+  const numMidStops = 4 + Math.floor(Math.random() * 18); // 3–7 colorful stops
   const stops: Stop[] = [[0.0, 0, 0, 0]];
 
   // Evenly spaced positions with small random jitter
