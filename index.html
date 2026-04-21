@@ -33,6 +33,9 @@
   </div>
 
   <!-- ─── HUD ──────────────────────────────────────────────── -->
+  <div id="mini-mandelbrot-container" style="display: none;">
+    <canvas id="mini-mandelbrot-canvas" width="150" height="150"></canvas>
+  </div>
   <div id="hud">
     <div id="quick-iter-container" title="Iterations">
       <input id="quick-iter-slider" type="range" min="32" max="10000" value="256" step="32"/>
@@ -42,6 +45,7 @@
       <input id="quick-speed-slider" type="range" min="0.1" max="8" step="0.2" value="0.8"/>
       <span class="quick-slider-label">C. SPEED</span>
     </div>
+    <button id="path-mode-btn" class="btn">📍 <span class="btn-label">Path</span></button>
     <div class="hud-chip">🔍 <span id="zoom-counter">1.0×</span></div>
     <div class="hud-chip">⟳ <span id="iter-counter">256</span> iter</div>
     <div id="julia-coords" class="hud-chip" style="display:none;color:#a5b4fc">c = …</div>
@@ -129,7 +133,7 @@
     <div class="section-title">ℹ️ Info</div>
     <p style="font-size:0.7rem;color:#64748b;line-height:1.6;margin:0">
       Powered by <strong style="color:#94a3b8">AssemblyScript WASM</strong> + Web Workers.<br>
-      Scroll to zoom · Drag to pan · Double-click to zoom in · Pinch on touch.
+      Scroll to zoom · Drag to pan · Pinch on touch.
     </p>
   </div>
 
@@ -151,12 +155,13 @@
       <div class="shortcut-row"><span>Zoom in (center)</span><kbd>Z</kbd></div>
       <div class="shortcut-row"><span>Zoom out (center)</span><kbd>X</kbd></div>
       <div class="shortcut-row"><span>Pan</span><kbd>←</kbd> <kbd>→</kbd> <kbd>↑</kbd> <kbd>↓</kbd></div>
-      <div class="shortcut-row"><span>Zoom in (click)</span><span>Double-click</span></div>
+      <div class="shortcut-row"><span>Zoom in (click)</span><span>(Removed)</span></div>
+      <div class="shortcut-row"><span>Draw path to center</span><kbd>M</kbd></div>
       <div class="shortcut-row"><span>Zoom</span><span>Scroll wheel</span></div>
       <div class="shortcut-row"><span>Pan</span><span>Click &amp; drag</span></div>
       <div class="shortcut-row"><span>Pinch zoom</span><span>Two-finger pinch</span></div>
       <p style="font-size:0.7rem;color:#475569;margin-top:1rem;line-height:1.5">
-        Tip: Double-click any point to deep zoom into it. In Julia mode, hover to explore different Julia parameters!
+        Tip: In Julia mode, hover to explore different Julia parameters!
       </p>
     </div>
   </div>

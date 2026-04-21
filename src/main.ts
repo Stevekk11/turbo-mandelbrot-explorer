@@ -114,7 +114,10 @@ function animateTiles() {
       : (completedTiles >= totalTiles);
 
   if (receivedAll && allDone) {
-    if (offscreen) ctx.drawImage(offscreen, 0, 0);
+    if (offscreen) {
+      ctx.drawImage(offscreen, 0, 0);
+      drawPath();
+    }
   } else {
     fadeRaf = requestAnimationFrame(animateTiles);
   }
@@ -303,6 +306,7 @@ function handleWorkerMessage(e: MessageEvent) {
       } else {
         // Blit offscreen to visible canvas immediately
         ctx.drawImage(offscreen, 0, 0);
+        drawPath();
       }
     }
 
@@ -328,7 +332,28 @@ function handleWorkerMessage(e: MessageEvent) {
   }
 }
 
-// ─── Coordinate utilities ─────────────────────────────────────────────────────
+
+canvas.addEventListener('dblclick', (e) => {
+  if (!pathDrawingMode) return;
+  if (view.isJulia) return;
+  // Convert screen coordinates to fractal coordinates
+  const [fx, fy] = screenToFractal(e.clientX * devicePixelRatio, e.clientY * devicePixelRatio);
+
+  // Better: store in fractal space
+  const start = {re: fx[0], im: fy[0]};
+  const end = {re: -0.5, im: 0};
+
+  pathPoints = fractalToScreenPath(start, end);
+  drawPath();
+});
+
+canvas.addEventListener('contextmenu', (e) => {
+  if (pathPoints) {
+    e.preventDefault();
+    pathPoints = null;
+    scheduleRender();
+  }
+});
 
 function screenToFractal(sx: number, sy: number): [QD, QD] {
   const dXMin = qdFromString(view.xMin);
@@ -459,6 +484,7 @@ let lastTouchDist = 0;
 let panSource: OffscreenCanvas | null = null;
 // Debounce timer for wheel zoom re-renders
 let wheelTimer: ReturnType<typeof setTimeout> | null = null;
+let pathDrawingMode = false;
 
 canvas.addEventListener('mousedown', (e) => {
   if (e.button !== 0) return;
@@ -567,9 +593,6 @@ canvas.addEventListener('wheel', (e) => {
   }, 120);
 }, { passive: false });
 
-canvas.addEventListener('dblclick', (e) => {
-  zoomAt(e.clientX, e.clientY, 0.35);
-});
 
 // Touch support
 canvas.addEventListener('touchstart', (e) => {
@@ -694,6 +717,9 @@ document.addEventListener('keydown', (e) => {
     case 'arrowdown':  zoomAt(cx, cy * 1.4, 1); break;
     case 'z': zoomAt(cx, cy, 0.5); break;
     case 'x': zoomAt(cx, cy, 2.0); break;
+    case 'm':
+      togglePathMode();
+      break;
   }
 });
 
@@ -760,6 +786,13 @@ function toggleJulia() {
   }
   const coordsEl = document.getElementById('julia-coords') as HTMLElement;
   if (coordsEl) coordsEl.style.display = view.isJulia ? 'inline-flex' : 'none';
+
+  const miniContainer = document.getElementById('mini-mandelbrot-container') as HTMLElement;
+  if (miniContainer) {
+    miniContainer.style.display = view.isJulia ? 'block' : 'none';
+    if (view.isJulia) renderMiniMandelbrot();
+  }
+  
   scheduleRender();
 }
 
@@ -793,7 +826,75 @@ function updateFractalTypeUI() {
   if (sel) sel.value = String(view.fractalType);
 }
 
-// ─── Orbit Trap Mode ──────────────────────────────────────────────────────────
+
+function renderMiniMandelbrot() {
+  const canvas = document.getElementById('mini-mandelbrot-canvas') as HTMLCanvasElement;
+  const ctx = canvas.getContext('2d')!;
+
+  // No explicit background fill needed for black/white rendering
+
+  const w = canvas.width;
+  const h = canvas.height;
+  const img = ctx.createImageData(w, h);
+  const data = img.data;
+
+  const xMin = -2.0;
+  const xMax = 0.5;
+  const yMin = -1.25;
+  const yMax = 1.25;
+
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      let re = xMin + (x / w) * (xMax - xMin);
+      let im = yMin + (y / h) * (yMax - yMin);
+      let zRe = 0, zIm = 0;
+      let iter = 0;
+      const maxIter = 64;
+      while (zRe * zRe + zIm * zIm <= 4 && iter < maxIter) {
+        let tmp = zRe * zRe - zIm * zIm + re;
+        zIm = 2 * zRe * zIm + im;
+        zRe = tmp;
+        iter++;
+      }
+
+      const pixel = (y * w + x) * 4;
+      // Black and white contrast: inside is black, outside is white
+      if (iter === maxIter) {
+        data[pixel] = 0;
+        data[pixel + 1] = 0;
+        data[pixel + 2] = 0;
+        data[pixel + 3] = 255;
+      } else {
+        data[pixel] = 255;
+        data[pixel + 1] = 255;
+        data[pixel + 2] = 255;
+        data[pixel + 3] = 255;
+      }
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+}
+
+document.getElementById('mini-mandelbrot-canvas')?.addEventListener('click', (e) => {
+  const rect = (e.target as HTMLCanvasElement).getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  const y = e.clientY - rect.top;
+  const w = rect.width;
+  const h = rect.height;
+
+  const re = -2.0 + (x / w) * 2.5;
+  const im = -1.25 + (y / h) * 2.5;
+
+  view.juliaRe = String(re);
+  view.juliaIm = String(im);
+
+  const reInput = document.getElementById('julia-re') as HTMLInputElement;
+  const imInput = document.getElementById('julia-im') as HTMLInputElement;
+  if (reInput) reInput.value = String(re.toFixed(4));
+  if (imInput) imInput.value = String(im.toFixed(4));
+
+  scheduleRender();
+});
 
 const ORBIT_TRAP_MODES = [
   {label: 'None', value: 0},
@@ -823,7 +924,50 @@ function saveScreenshot() {
   link.href = canvas.toDataURL('image/png');
   link.click();
 }
-// ─── 3D Shadows ───────────────────────────────────────────────────────────────
+
+function fractalToScreenPath(start: { re: number, im: number }, end: { re: number, im: number }): {
+  x: number,
+  y: number
+}[] {
+  const dXMin = qdFromString(view.xMin);
+  const dXMax = qdFromString(view.xMax);
+  const dYMin = qdFromString(view.yMin);
+  const dYMax = qdFromString(view.yMax);
+
+  const xRange = qdSub(dXMax, dXMin);
+  const yRange = qdSub(dYMax, dYMin);
+
+  const w = canvas.width;
+  const h = canvas.height;
+
+  const xMinNum = qdHi(dXMin);
+  const xRangeNum = qdHi(xRange);
+  const yMinNum = qdHi(dYMin);
+  const yRangeNum = qdHi(yRange);
+
+  const startX = (start.re - xMinNum) / xRangeNum * w;
+  const startY = (start.im - yMinNum) / yRangeNum * h;
+  const endX = (end.re - xMinNum) / xRangeNum * w;
+  const endY = (end.im - yMinNum) / yRangeNum * h;
+
+  return [{x: startX, y: startY}, {x: endX, y: endY}];
+}
+
+let pathPoints: { x: number, y: number }[] | null = null;
+
+function drawPath() {
+  if (!pathPoints || view.isJulia) return;
+  ctx.save();
+  ctx.strokeStyle = 'red';
+  ctx.lineWidth = 10;
+  ctx.beginPath();
+  ctx.moveTo(pathPoints[0].x, pathPoints[0].y);
+  for (let i = 1; i < pathPoints.length; i++) {
+    ctx.lineTo(pathPoints[i].x, pathPoints[i].y);
+  }
+  ctx.stroke();
+  ctx.restore();
+}
 
 function toggleShadows() {
   view.shadows = !view.shadows;
@@ -1166,3 +1310,11 @@ async function init() {
 }
 
 init();
+
+function togglePathMode() {
+  pathDrawingMode = !pathDrawingMode;
+  const btn = document.getElementById('path-mode-btn');
+  if (btn) btn.classList.toggle('btn-active', pathDrawingMode);
+}
+
+document.getElementById('path-mode-btn')?.addEventListener('click', togglePathMode);

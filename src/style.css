@@ -47,7 +47,25 @@ html, body {
   backdrop-filter: blur(4px);
 }
 
-/* ── HUD (bottom bar) ───────────────────────────────────────────── */
+#mini-mandelbrot-container {
+  position: absolute;
+  bottom: 60px;
+  left: 10px;
+  width: 150px;
+  height: 150px;
+  border: 2px solid #4f46e5;
+  background: #000;
+  z-index: 10;
+  border-radius: 8px;
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), background 0.3s ease;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+#mini-mandelbrot-container:hover {
+  transform: scale(1.5);
+  transform-origin: bottom left;
+}
 #hud {
   position: fixed;
   bottom: 0; left: 0; right: 0;
