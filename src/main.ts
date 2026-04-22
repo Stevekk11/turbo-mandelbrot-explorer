@@ -583,7 +583,6 @@ canvas.addEventListener('mouseup', (e) => {
     // Treat as a measurement click — do not re-render the fractal
     isDragging = false;
     panSource = null;
-    canvas.style.cursor = 'crosshair';
     const dpr = window.devicePixelRatio || 1;
     const [fx, fy] = screenToFractal(e.clientX * dpr, e.clientY * dpr);
     measurePoints.push({ re: qdHi(fx), im: qdHi(fy) });
