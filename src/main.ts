@@ -128,6 +128,7 @@ function animateTiles() {
     if (offscreen) {
       ctx.drawImage(offscreen, 0, 0);
       drawPath();
+      drawMeasurements();
     }
   } else {
     fadeRaf = requestAnimationFrame(animateTiles);
@@ -318,6 +319,7 @@ function handleWorkerMessage(e: MessageEvent) {
         // Blit offscreen to visible canvas immediately
         ctx.drawImage(offscreen, 0, 0);
         drawPath();
+        drawMeasurements();
       }
     }
 
@@ -356,9 +358,16 @@ canvas.addEventListener('dblclick', (e) => {
 
   pathPoints = fractalToScreenPath(start, end);
   drawPath();
+  drawMeasurements();
 });
 
 canvas.addEventListener('contextmenu', (e) => {
+  if (measureMode && measurePoints.length > 0) {
+    e.preventDefault();
+    measurePoints = [];
+    redrawOverlays();
+    return;
+  }
   if (pathPoints) {
     e.preventDefault();
     pathPoints = null;
@@ -496,6 +505,8 @@ let panSource: OffscreenCanvas | null = null;
 // Debounce timer for wheel zoom re-renders
 let wheelTimer: ReturnType<typeof setTimeout> | null = null;
 let pathDrawingMode = false;
+let measureMode = false;
+let measurePoints: { re: number; im: number }[] = [];
 
 canvas.addEventListener('mousedown', (e) => {
   if (e.button !== 0) return;
@@ -565,7 +576,21 @@ function endDrag() {
   scheduleRender();
 }
 
-canvas.addEventListener('mouseup', endDrag);
+canvas.addEventListener('mouseup', (e) => {
+  if (e.button !== 0) return;
+  const moved = Math.hypot(e.clientX - dragStartX, e.clientY - dragStartY);
+  if (measureMode && moved < 5) {
+    // Treat as a measurement click — do not re-render the fractal
+    isDragging = false;
+    panSource = null;
+    const dpr = window.devicePixelRatio || 1;
+    const [fx, fy] = screenToFractal(e.clientX * dpr, e.clientY * dpr);
+    measurePoints.push({ re: qdHi(fx), im: qdHi(fy) });
+    redrawOverlays();
+    return;
+  }
+  endDrag();
+});
 canvas.addEventListener('mouseleave', endDrag);
 
 canvas.addEventListener('wheel', (e) => {
@@ -730,6 +755,12 @@ document.addEventListener('keydown', (e) => {
     case 'x': zoomAt(cx, cy, 2.0); break;
     case 'm':
       togglePathMode();
+      break;
+    case 'escape':
+      if (measureMode && measurePoints.length > 0) {
+        measurePoints = [];
+        redrawOverlays();
+      }
       break;
   }
 });
@@ -978,6 +1009,91 @@ function drawPath() {
   }
   ctx.stroke();
   ctx.restore();
+}
+
+// ─── Measurement mode ─────────────────────────────────────────────────────────
+
+function fractalToScreenPoint(re: number, im: number): { x: number; y: number } {
+  const xMinNum = qdHi(qdFromString(view.xMin));
+  const xMaxNum = qdHi(qdFromString(view.xMax));
+  const yMinNum = qdHi(qdFromString(view.yMin));
+  const yMaxNum = qdHi(qdFromString(view.yMax));
+  const x = (re - xMinNum) / (xMaxNum - xMinNum) * canvas.width;
+  const y = (im - yMinNum) / (yMaxNum - yMinNum) * canvas.height;
+  return { x, y };
+}
+
+function drawMeasurements() {
+  if (!measureMode || measurePoints.length === 0) return;
+
+  const pts = measurePoints.map(p => fractalToScreenPoint(p.re, p.im));
+
+  ctx.save();
+
+  // Lines between consecutive points
+  if (pts.length >= 2) {
+    ctx.strokeStyle = '#00e5ff';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 3]);
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // Dots at each point
+  ctx.fillStyle = '#00e5ff';
+  for (const pt of pts) {
+    ctx.beginPath();
+    ctx.arc(pt.x, pt.y, 5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Total distance label
+  if (measurePoints.length >= 2) {
+    let total = 0;
+    for (let i = 1; i < measurePoints.length; i++) {
+      const dx = measurePoints[i].re - measurePoints[i - 1].re;
+      const dy = measurePoints[i].im - measurePoints[i - 1].im;
+      total += Math.sqrt(dx * dx + dy * dy);
+    }
+    const label = total >= 1000
+      ? `${(total / 1000).toFixed(3)} km`
+      : `${total.toFixed(3)} m`;
+
+    const last = pts[pts.length - 1];
+    const fontSize = 14;
+    ctx.font = `bold ${fontSize}px ui-monospace, monospace`;
+    const tw = ctx.measureText(label).width;
+    const pad = 6;
+    const bx = last.x + 12;
+    const by = last.y - 8;
+    ctx.fillStyle = 'rgba(0,0,0,0.75)';
+    ctx.fillRect(bx - pad, by - fontSize, tw + pad * 2, fontSize + pad * 2);
+    ctx.fillStyle = '#00e5ff';
+    ctx.fillText(label, bx, by);
+  }
+
+  ctx.restore();
+}
+
+function redrawOverlays() {
+  if (offscreen) {
+    ctx.drawImage(offscreen, 0, 0);
+    drawPath();
+    drawMeasurements();
+  }
+}
+
+function toggleMeasureMode() {
+  measureMode = !measureMode;
+  const btn = document.getElementById('measure-btn');
+  if (btn) btn.classList.toggle('btn-active', measureMode);
+  if (!measureMode) {
+    measurePoints = [];
+    redrawOverlays();
+  }
 }
 
 function toggleShadows() {
@@ -1240,6 +1356,7 @@ function initToolbar() {
   document.getElementById('audio-visualizer-btn')?.addEventListener('click', toggleAudioPulse);
   document.getElementById('shadows-btn')?.addEventListener('click', toggleShadows);
   document.getElementById('random-palette-btn')?.addEventListener('click', randomizePalette);
+  document.getElementById('measure-btn')?.addEventListener('click', toggleMeasureMode);
 
   // Bookmarks
   document.getElementById('bookmark-btn')?.addEventListener('click', saveBookmark);
