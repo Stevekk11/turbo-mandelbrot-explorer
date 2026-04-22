@@ -121,7 +121,7 @@ export function createAudioVisualizer(): AudioVisualizerController {
         const floorTarget = rawEnergy < noiseFloor ? rawEnergy : noiseFloor;
         noiseFloor = noiseFloor * 0.99 + floorTarget * 0.01;
 
-        const gated = Math.max(0, rawEnergy - (noiseFloor + 0.4));
+        const gated = Math.max(0, rawEnergy - (noiseFloor + 0.35));
         const normalized = Math.min(1, gated * sensitivity * 2.0);
 
         const attack = 0.3;
