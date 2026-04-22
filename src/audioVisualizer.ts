@@ -127,7 +127,9 @@ export function createAudioVisualizer(): AudioVisualizerController {
         const normalized = Math.min(1, gated * sensitivity * 3.25);
 
         const attack = 0.38;
-        const release = 0.08;
+        // Faster decay after peaks: larger drops release more aggressively.
+        const drop = Math.max(0, smoothedLevel - normalized);
+        const release = Math.min(0.55, 0.2 + drop * 0.65);
         const coeff = normalized > smoothedLevel ? attack : release;
         smoothedLevel += (normalized - smoothedLevel) * coeff;
 

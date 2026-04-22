@@ -87,7 +87,7 @@ let activeTilesGen = 0;
 let activeTilesIsRecolor = false;
 
 function startTileAnimation(gen: number, isRecolor: boolean) {
-  if (colorAnimActive) return;
+  if (colorAnimActive || audioPulseActive) return;
   renderSnapshot = new OffscreenCanvas(canvas.width, canvas.height);
   renderSnapshot.getContext('2d')!.drawImage(canvas, 0, 0);
   activeTiles = [];
@@ -295,7 +295,7 @@ function handleWorkerMessage(e: MessageEvent) {
     const isCurrentRender  = result.gen === renderGen;
     const isCurrentRecolor = result.gen === recolorGen;
 
-    const shouldAnimate = !colorAnimActive;
+    const shouldAnimate = !colorAnimActive && !audioPulseActive;
 
     if ((isCurrentRender || isCurrentRecolor) && offCtx && offscreen) {
       const imgData = new ImageData(
@@ -1022,7 +1022,9 @@ function runAudioPulse() {
   const levelText = document.getElementById('audio-level-text');
   if (levelText) levelText.textContent = `${Math.round(level * 100)}%`;
 
-  if (pendingRecolorTiles === 0 && tileWorkerMap.size > 0) {
+  // Keep pulse recolor off while the view is still moving/rendering to avoid mixed generations.
+  const canRecolor = !isRendering && !isDragging && wheelTimer === null;
+  if (canRecolor && pendingRecolorTiles === 0 && tileWorkerMap.size > 0) {
     const now = performance.now();
     if (now - lastAudioRecolorAt >= AUDIO_RECOLOR_INTERVAL_MS) {
       view.colorOffset = (view.colorOffset + AUDIO_OFFSET_STEP + level * 0.03) % 1;
@@ -1037,6 +1039,12 @@ function runAudioPulse() {
 async function setAudioPulseEnabled(enabled: boolean) {
   if (enabled) {
     try {
+      // Only one recolor loop should run at once; pulse replaces manual color animation.
+      if (colorAnimActive) {
+        colorAnimActive = false;
+        cancelAnimationFrame(colorAnimRaf);
+        document.getElementById('color-anim-btn')?.classList.remove('btn-active');
+      }
       audioVisualizer.setSensitivity(audioSensitivity);
       await audioVisualizer.start();
       audioPulseActive = true;
