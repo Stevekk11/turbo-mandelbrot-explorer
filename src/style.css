@@ -9,6 +9,7 @@
   --clr-accent2: #d70f41;
   --clr-text:    #e2e8f0;
   --clr-muted:   #94a3b8;
+  --audio-level: 0;
 }
 
 /* ── Global reset ───────────────────────────────────────────────── */
@@ -218,6 +219,17 @@ html, body {
   border-color: var(--clr-accent) !important;
   box-shadow: 0 0 12px rgba(99,102,241,0.4);
   color: #a5b4fc;
+}
+
+#audio-visualizer-btn.mic-live {
+  border-color: color-mix(in srgb, var(--clr-accent2) 35%, #f8fafc);
+  box-shadow: 0 0 calc(6px + (var(--audio-level) * 20px)) rgba(215, 15, 65, 0.5);
+}
+
+#audio-level-chip {
+  color: #fda4af;
+  border-color: color-mix(in srgb, var(--clr-accent2) 55%, #111827);
+  box-shadow: 0 0 calc(3px + (var(--audio-level) * 16px)) rgba(215, 15, 65, 0.4);
 }
 .btn-icon {
   padding: 0.3rem 0.5rem;

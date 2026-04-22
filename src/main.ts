@@ -7,6 +7,7 @@
 import './style.css';
 import type {Bookmark, PrecisionTier, RecolorTask, RenderResult, RenderTask, ViewState} from './types';
 import {generateRandomPalette, PALETTES, RANDOM_PALETTE_INDEX} from './colorPalettes';
+import {createAudioVisualizer} from './audioVisualizer';
 import {type QD, qdAdd, qdDiv, qdDivNum, qdFromString, qdHi, qdMulNum, qdSub, qdToString,} from './qd';
 
 // ─── Worker pool ──────────────────────────────────────────────────────────────
@@ -51,6 +52,16 @@ let totalTiles = 0;
 let isRendering = false;
 let colorAnimRaf = 0;
 let colorAnimActive = false;
+
+const audioVisualizer = createAudioVisualizer();
+const AUDIO_RECOLOR_INTERVAL_MS = 33;
+const AUDIO_OFFSET_STEP = 0.0012;
+
+let audioPulseRaf = 0;
+let audioPulseActive = false;
+let audioSensitivity = 1.4;
+let lastAudioRecolorAt = 0;
+
 const precisionTierHintEl = document.getElementById('precision-tier-hint');
 
 function updatePrecisionTierHint(tier: PrecisionTier) {
@@ -980,6 +991,76 @@ function toggleShadows() {
 
 // ─── Color animation ──────────────────────────────────────────────────────────
 
+function updateAudioSensitivityUI() {
+  const slider = document.getElementById('audio-sensitivity-slider') as HTMLInputElement | null;
+  const display = document.getElementById('audio-sensitivity-display');
+  if (slider) slider.value = audioSensitivity.toFixed(1);
+  if (display) display.textContent = audioSensitivity.toFixed(1);
+}
+
+function updateAudioPulseUI(status?: string) {
+  const btn = document.getElementById('audio-visualizer-btn');
+  const checkbox = document.getElementById('audio-visualizer-checkbox') as HTMLInputElement | null;
+  const levelText = document.getElementById('audio-level-text');
+
+  if (btn) {
+    btn.classList.toggle('btn-active', audioPulseActive);
+    btn.classList.toggle('mic-live', audioPulseActive);
+  }
+  if (checkbox) checkbox.checked = audioPulseActive;
+  if (levelText) {
+    levelText.textContent = status ?? (audioPulseActive ? 'listening...' : 'mic off');
+  }
+}
+
+function runAudioPulse() {
+  if (!audioPulseActive) return;
+
+  const level = audioVisualizer.sampleLevel();
+  document.documentElement.style.setProperty('--audio-level', level.toFixed(3));
+
+  const levelText = document.getElementById('audio-level-text');
+  if (levelText) levelText.textContent = `${Math.round(level * 100)}%`;
+
+  if (pendingRecolorTiles === 0 && tileWorkerMap.size > 0) {
+    const now = performance.now();
+    if (now - lastAudioRecolorAt >= AUDIO_RECOLOR_INTERVAL_MS) {
+      view.colorOffset = (view.colorOffset + AUDIO_OFFSET_STEP + level * 0.03) % 1;
+      scheduleRecolor();
+      lastAudioRecolorAt = now;
+    }
+  }
+
+  audioPulseRaf = requestAnimationFrame(runAudioPulse);
+}
+
+async function setAudioPulseEnabled(enabled: boolean) {
+  if (enabled) {
+    try {
+      audioVisualizer.setSensitivity(audioSensitivity);
+      await audioVisualizer.start();
+      audioPulseActive = true;
+      updateAudioPulseUI();
+      runAudioPulse();
+    } catch {
+      audioPulseActive = false;
+      updateAudioPulseUI('mic unavailable');
+      document.documentElement.style.setProperty('--audio-level', '0');
+    }
+    return;
+  }
+
+  audioPulseActive = false;
+  cancelAnimationFrame(audioPulseRaf);
+  audioVisualizer.stop();
+  document.documentElement.style.setProperty('--audio-level', '0');
+  updateAudioPulseUI();
+}
+
+function toggleAudioPulse() {
+  void setAudioPulseEnabled(!audioPulseActive);
+}
+
 function toggleColorAnim() {
   colorAnimActive = !colorAnimActive;
   const btn = document.getElementById('color-anim-btn');
@@ -1078,6 +1159,27 @@ function initSettingsPanel() {
     quickSpeedSlider.addEventListener('input', () => handleSpeedInput(quickSpeedSlider.value));
   }
 
+  const audioVisualizerCheckbox = document.getElementById('audio-visualizer-checkbox') as HTMLInputElement | null;
+  const audioSensitivitySlider = document.getElementById('audio-sensitivity-slider') as HTMLInputElement | null;
+  updateAudioSensitivityUI();
+  updateAudioPulseUI();
+
+  if (audioVisualizerCheckbox) {
+    audioVisualizerCheckbox.checked = audioPulseActive;
+    audioVisualizerCheckbox.addEventListener('change', () => {
+      void setAudioPulseEnabled(audioVisualizerCheckbox.checked);
+    });
+  }
+
+  if (audioSensitivitySlider) {
+    audioSensitivitySlider.value = audioSensitivity.toFixed(1);
+    audioSensitivitySlider.addEventListener('input', () => {
+      audioSensitivity = parseFloat(audioSensitivitySlider.value) || 1.4;
+      audioVisualizer.setSensitivity(audioSensitivity);
+      updateAudioSensitivityUI();
+    });
+  }
+
   // 3D Shadows checkbox
   const shadowsCheckbox = document.getElementById('shadows-checkbox') as HTMLInputElement | null;
   if (shadowsCheckbox) {
@@ -1127,6 +1229,7 @@ function initToolbar() {
   document.getElementById('julia-btn')?.addEventListener('click', toggleJulia);
   document.getElementById('screenshot-btn')?.addEventListener('click', saveScreenshot);
   document.getElementById('color-anim-btn')?.addEventListener('click', toggleColorAnim);
+  document.getElementById('audio-visualizer-btn')?.addEventListener('click', toggleAudioPulse);
   document.getElementById('shadows-btn')?.addEventListener('click', toggleShadows);
   document.getElementById('random-palette-btn')?.addEventListener('click', randomizePalette);
 
@@ -1300,6 +1403,8 @@ async function init() {
   initSettingsPanel();
   initToolbar();
   initHelp();
+  updateAudioSensitivityUI();
+  updateAudioPulseUI();
 
   // Resolve WASM URL relative to base URL (works for GitHub Pages sub-path)
   const base = import.meta.env.BASE_URL;
@@ -1318,3 +1423,8 @@ function togglePathMode() {
 }
 
 document.getElementById('path-mode-btn')?.addEventListener('click', togglePathMode);
+
+window.addEventListener('beforeunload', () => {
+  audioVisualizer.stop();
+});
+

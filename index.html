@@ -18,7 +18,9 @@
     </span>
     <div style="flex:1"></div>
     <button id="julia-btn" class="btn">🌀 <span class="btn-label"></span>J</button>
-      <button id="color-anim-btn" class="btn">🌈 <span class="btn-label">Animate</span></button>
+    <button id="color-anim-btn" class="btn">🌈 <span class="btn-label">Animate</span></button>
+    <button id="audio-visualizer-btn" class="btn" title="Mic reactive color pulse">🎤 <span
+            class="btn-label">Pulse</span></button>
     <button id="shadows-btn"   class="btn">💡 <span class="btn-label">Shadows</span></button>
     <button id="reset-btn"     class="btn">🏠 <span class="btn-label">Reset</span></button>
     <button id="screenshot-btn" class="btn btn-icon" title="Save PNG">📸</button>
@@ -49,6 +51,7 @@
     <div class="hud-chip">🔍 <span id="zoom-counter">1.0×</span></div>
     <div class="hud-chip">⟳ <span id="iter-counter">256</span> iter</div>
     <div id="julia-coords" class="hud-chip" style="display:none;color:#a5b4fc">c = …</div>
+    <div id="audio-level-chip" class="hud-chip">🎤 <span id="audio-level-text">mic off</span></div>
     <div style="flex:1"></div>
     <div class="hud-chip hud-hint" style="font-size:0.65rem;color:#475569">
       ⌨ R=Reset J=Julia P=Palette S=Screenshot H=Shadows C=Color ±Iter
@@ -106,6 +109,23 @@
     <div style="display:flex;align-items:center;justify-content:space-between;margin-top:0.5rem">
       <label class="block text-xs uppercase tracking-wider text-gray-400" for="shadows-checkbox">💡 3D Shadows</label>
       <input id="shadows-checkbox" type="checkbox" style="width:1rem;height:1rem;cursor:pointer;accent-color:var(--clr-accent)"/>
+    </div>
+
+    <div class="section-title">🎤 Audio Visualizer</div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-top:0.25rem">
+      <label class="block text-xs uppercase tracking-wider text-gray-400" for="audio-visualizer-checkbox">Mic
+        Pulse</label>
+      <input id="audio-visualizer-checkbox" type="checkbox"
+             style="width:1rem;height:1rem;cursor:pointer;accent-color:var(--clr-accent2)"/>
+    </div>
+    <div>
+      <label class="block text-xs uppercase tracking-wider text-gray-400 mb-1 flex justify-between"
+             for="audio-sensitivity-slider">
+        <span>Mic Sensitivity</span>
+        <span id="audio-sensitivity-display">1.4</span>×
+      </label>
+      <input id="audio-sensitivity-slider" type="range" min="0.5" max="4" step="0.1" value="1.4"
+             class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"/>
     </div>
 
     <!-- Julia Set -->
