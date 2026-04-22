@@ -8,7 +8,7 @@ import './style.css';
 import type {Bookmark, PrecisionTier, RecolorTask, RenderResult, RenderTask, ViewState} from './types';
 import {generateRandomPalette, PALETTES, RANDOM_PALETTE_INDEX} from './colorPalettes';
 import {createAudioVisualizer} from './audioVisualizer';
-import {type QD, qdAdd, qdDiv, qdDivNum, qdFromString, qdHi, qdMulNum, qdSub, qdToString,} from './qd';
+import {type QD, qdAdd, qdDiv, qdDivNum, qdFromString, qdHi, qdMul, qdMulNum, qdSub, qdToNumber, qdToString,} from './qd';
 
 // ─── Worker pool ──────────────────────────────────────────────────────────────
 
@@ -506,7 +506,7 @@ let panSource: OffscreenCanvas | null = null;
 let wheelTimer: ReturnType<typeof setTimeout> | null = null;
 let pathDrawingMode = false;
 let measureMode = false;
-let measurePoints: { re: number; im: number }[] = [];
+let measurePoints: { re: QD; im: QD }[] = [];
 
 canvas.addEventListener('mousedown', (e) => {
   if (e.button !== 0) return;
@@ -585,7 +585,7 @@ canvas.addEventListener('mouseup', (e) => {
     panSource = null;
     const dpr = window.devicePixelRatio || 1;
     const [fx, fy] = screenToFractal(e.clientX * dpr, e.clientY * dpr);
-    measurePoints.push({ re: qdHi(fx), im: qdHi(fy) });
+    measurePoints.push({ re: fx, im: fy });
     redrawOverlays();
     return;
   }
@@ -1013,6 +1013,39 @@ function drawPath() {
 
 // ─── Measurement mode ─────────────────────────────────────────────────────────
 
+/**
+ * Format a fractal-coordinate distance using SI prefixes so the label remains
+ * readable at any zoom level (from km at low zoom down to qm at QD precision).
+ */
+function formatDistance(d: number): string {
+  if (!isFinite(d) || d < 0) return '—';
+  if (d === 0) return '0 m';
+
+  const prefixes: [number, string][] = [
+    [1e3,  'km'],
+    [1,    'm' ],
+    [1e-3, 'mm'],
+    [1e-6, 'μm'],
+    [1e-9, 'nm'],
+    [1e-12,'pm'],
+    [1e-15,'fm'],
+    [1e-18,'am'],
+    [1e-21,'zm'],
+    [1e-24,'ym'],
+    [1e-27,'rm'],
+    [1e-30,'qm'],
+  ];
+
+  for (const [scale, unit] of prefixes) {
+    if (d >= scale) {
+      return `${(d / scale).toFixed(3)} ${unit}`;
+    }
+  }
+
+  // Beyond standard SI prefix range — use scientific notation
+  return `${d.toExponential(3)} m`;
+}
+
 function fractalToScreenPoint(re: number, im: number): { x: number; y: number } {
   const xMinNum = qdHi(qdFromString(view.xMin));
   const xMaxNum = qdHi(qdFromString(view.xMax));
@@ -1026,7 +1059,7 @@ function fractalToScreenPoint(re: number, im: number): { x: number; y: number } 
 function drawMeasurements() {
   if (!measureMode || measurePoints.length === 0) return;
 
-  const pts = measurePoints.map(p => fractalToScreenPoint(p.re, p.im));
+  const pts = measurePoints.map(p => fractalToScreenPoint(qdHi(p.re), qdHi(p.im)));
 
   ctx.save();
 
@@ -1054,13 +1087,11 @@ function drawMeasurements() {
   if (measurePoints.length >= 2) {
     let total = 0;
     for (let i = 1; i < measurePoints.length; i++) {
-      const dx = measurePoints[i].re - measurePoints[i - 1].re;
-      const dy = measurePoints[i].im - measurePoints[i - 1].im;
-      total += Math.sqrt(dx * dx + dy * dy);
+      const dx = qdSub(measurePoints[i].re, measurePoints[i - 1].re);
+      const dy = qdSub(measurePoints[i].im, measurePoints[i - 1].im);
+      total += Math.sqrt(qdToNumber(qdAdd(qdMul(dx, dx), qdMul(dy, dy))));
     }
-    const label = total >= 1000
-      ? `${(total / 1000).toFixed(3)} km`
-      : `${total.toFixed(3)} m`;
+    const label = formatDistance(total);
 
     const last = pts[pts.length - 1];
     const fontSize = 14;
