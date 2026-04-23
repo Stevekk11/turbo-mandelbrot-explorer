@@ -346,19 +346,24 @@ function handleWorkerMessage(e: MessageEvent) {
 }
 
 
-canvas.addEventListener('dblclick', (e) => {
+function placePathAtClientPoint(clientX: number, clientY: number) {
   if (!pathDrawingMode) return;
   if (view.isJulia) return;
+
+  const dpr = window.devicePixelRatio || 1;
   // Convert screen coordinates to fractal coordinates
-  const [fx, fy] = screenToFractal(e.clientX * devicePixelRatio, e.clientY * devicePixelRatio);
+  const [fx, fy] = screenToFractal(clientX * dpr, clientY * dpr);
 
   // Better: store in fractal space
-  const start = {re: fx[0], im: fy[0]};
-  const end = {re: -0.5, im: 0};
+  const start = { re: fx[0], im: fy[0] };
+  const end = { re: -0.5, im: 0 };
 
   pathPoints = fractalToScreenPath(start, end);
-  drawPath();
-  drawMeasurements();
+  redrawOverlays();
+}
+
+canvas.addEventListener('dblclick', (e) => {
+  placePathAtClientPoint(e.clientX, e.clientY);
 });
 
 canvas.addEventListener('contextmenu', (e) => {
@@ -507,6 +512,9 @@ let wheelTimer: ReturnType<typeof setTimeout> | null = null;
 let pathDrawingMode = false;
 let measureMode = false;
 let measurePoints: { re: QD; im: QD }[] = [];
+let lastTapTime = 0;
+let lastTapX = 0;
+let lastTapY = 0;
 
 canvas.addEventListener('mousedown', (e) => {
   if (e.button !== 0) return;
@@ -733,6 +741,24 @@ canvas.addEventListener('touchend', (e) => {
       measurePoints.push({ re: fx, im: fy });
       redrawOverlays();
       return;
+    }
+
+    if (pathDrawingMode && moved < 5) {
+      const now = performance.now();
+      const isDoubleTap =
+        now - lastTapTime < 320 &&
+        Math.hypot(touch.clientX - lastTapX, touch.clientY - lastTapY) < 24;
+
+      lastTapTime = now;
+      lastTapX = touch.clientX;
+      lastTapY = touch.clientY;
+
+      if (isDoubleTap) {
+        isDragging = false;
+        panSource = null;
+        placePathAtClientPoint(touch.clientX, touch.clientY);
+        return;
+      }
     }
 
     endDrag();
