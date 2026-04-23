@@ -1026,6 +1026,111 @@ function saveScreenshot() {
   link.click();
 }
 
+function estimateEscapeIterations(re: number, im: number, maxIter: number): number {
+  let zRe = 0;
+  let zIm = 0;
+
+  for (let iter = 0; iter < maxIter; iter++) {
+    if (zRe * zRe + zIm * zIm > 4) return iter;
+
+    if (view.fractalType === 1) {
+      // Burning Ship: z_{n+1} = (|Re(z)| + i|Im(z)|)^2 + c
+      const aRe = Math.abs(zRe);
+      const aIm = Math.abs(zIm);
+      const nextRe = aRe * aRe - aIm * aIm + re;
+      const nextIm = 2 * aRe * aIm + im;
+      zRe = nextRe;
+      zIm = nextIm;
+    } else if (view.fractalType === 2) {
+      // Tricorn: z_{n+1} = conjugate(z)^2 + c
+      const nextRe = zRe * zRe - zIm * zIm + re;
+      const nextIm = -2 * zRe * zIm + im;
+      zRe = nextRe;
+      zIm = nextIm;
+    } else {
+      // Mandelbrot: z_{n+1} = z^2 + c
+      const nextRe = zRe * zRe - zIm * zIm + re;
+      const nextIm = 2 * zRe * zIm + im;
+      zRe = nextRe;
+      zIm = nextIm;
+    }
+  }
+
+  // Avoid preferring points deep inside the set when following long escape-time regions.
+  return 0;
+}
+
+function buildEscapeGuidedPath(start: { re: number, im: number }, end: { re: number, im: number }): { re: number, im: number }[] {
+  const dXMin = qdFromString(view.xMin);
+  const dXMax = qdFromString(view.xMax);
+  const dYMin = qdFromString(view.yMin);
+  const dYMax = qdFromString(view.yMax);
+  const xRange = Math.abs(qdHi(qdSub(dXMax, dXMin)));
+  const yRange = Math.abs(qdHi(qdSub(dYMax, dYMin)));
+
+  const dx = end.re - start.re;
+  const dy = end.im - start.im;
+  const len = Math.hypot(dx, dy);
+  if (len <= Number.EPSILON) return [start, end];
+
+  const steps = Math.max(24, Math.min(140, Math.round(canvas.width / 16)));
+  const points: { re: number, im: number }[] = [];
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    points.push({
+      re: start.re + dx * t,
+      im: start.im + dy * t,
+    });
+  }
+
+  const maxIter = Math.max(32, Math.min(320, Math.round(view.maxIter * 0.2)));
+  const baseStep = Math.max(xRange, yRange) * 0.0022;
+
+  for (let pass = 0; pass < 4; pass++) {
+    for (let i = 1; i < points.length - 1; i++) {
+      const prev = points[i - 1];
+      const next = points[i + 1];
+      const cur = points[i];
+
+      const tx = next.re - prev.re;
+      const ty = next.im - prev.im;
+      const tLen = Math.hypot(tx, ty) || 1;
+      const nx = -ty / tLen;
+      const ny = tx / tLen;
+
+      const linearT = i / steps;
+      const guideRe = start.re + dx * linearT;
+      const guideIm = start.im + dy * linearT;
+
+      let bestRe = cur.re;
+      let bestIm = cur.im;
+      let bestScore = -Infinity;
+
+      for (let k = -3; k <= 3; k++) {
+        const shift = k * baseStep;
+        const candRe = cur.re + nx * shift;
+        const candIm = cur.im + ny * shift;
+        const esc = estimateEscapeIterations(candRe, candIm, maxIter);
+        const driftPenalty = Math.hypot(candRe - guideRe, candIm - guideIm) / Math.max(baseStep, 1e-18);
+        const smoothPenalty = Math.hypot(candRe * 2 - prev.re - next.re, candIm * 2 - prev.im - next.im) / Math.max(baseStep, 1e-18);
+        const score = esc - driftPenalty * 0.45 - smoothPenalty * 0.25;
+
+        if (score > bestScore) {
+          bestScore = score;
+          bestRe = candRe;
+          bestIm = candIm;
+        }
+      }
+
+      points[i] = { re: bestRe, im: bestIm };
+    }
+  }
+
+  points[0] = start;
+  points[points.length - 1] = end;
+  return points;
+}
+
 function fractalToScreenPath(start: { re: number, im: number }, end: { re: number, im: number }): {
   x: number,
   y: number
@@ -1046,12 +1151,11 @@ function fractalToScreenPath(start: { re: number, im: number }, end: { re: numbe
   const yMinNum = qdHi(dYMin);
   const yRangeNum = qdHi(yRange);
 
-  const startX = (start.re - xMinNum) / xRangeNum * w;
-  const startY = (start.im - yMinNum) / yRangeNum * h;
-  const endX = (end.re - xMinNum) / xRangeNum * w;
-  const endY = (end.im - yMinNum) / yRangeNum * h;
-
-  return [{x: startX, y: startY}, {x: endX, y: endY}];
+  const fractalPath = buildEscapeGuidedPath(start, end);
+  return fractalPath.map(p => ({
+    x: (p.re - xMinNum) / xRangeNum * w,
+    y: (p.im - yMinNum) / yRangeNum * h,
+  }));
 }
 
 let pathPoints: { x: number, y: number }[] | null = null;
