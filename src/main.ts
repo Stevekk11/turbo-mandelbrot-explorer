@@ -358,7 +358,7 @@ function placePathAtClientPoint(clientX: number, clientY: number) {
   const start = { re: fx[0], im: fy[0] };
   const end = { re: -0.5, im: 0 };
 
-  pathPoints = fractalToScreenPath(start, end);
+  pathPoints = buildEscapeGuidedPath(start, end);
   redrawOverlays();
 }
 
@@ -1075,7 +1075,7 @@ function buildEscapeGuidedPath(start: { re: number, im: number }, end: { re: num
   const len = Math.hypot(dx, dy);
   if (len <= Number.EPSILON) return [start, end];
 
-  const steps = Math.max(24, Math.min(140, Math.round(canvas.width / 16)));
+  const steps = Math.max(48, Math.min(220, Math.round(canvas.width / 10)));
   const points: { re: number, im: number }[] = [];
   for (let i = 0; i <= steps; i++) {
     const t = i / steps;
@@ -1085,10 +1085,10 @@ function buildEscapeGuidedPath(start: { re: number, im: number }, end: { re: num
     });
   }
 
-  const maxIter = Math.max(32, Math.min(320, Math.round(view.maxIter * 0.2)));
-  const baseStep = Math.max(xRange, yRange) * 0.0022;
+  const maxIter = Math.max(128, Math.min(4000, view.maxIter));
+  const baseStep = Math.max(xRange, yRange) * 0.0008;
 
-  for (let pass = 0; pass < 4; pass++) {
+  for (let pass = 0; pass < 10; pass++) {
     for (let i = 1; i < points.length - 1; i++) {
       const prev = points[i - 1];
       const next = points[i + 1];
@@ -1108,16 +1108,16 @@ function buildEscapeGuidedPath(start: { re: number, im: number }, end: { re: num
       let bestIm = cur.im;
       let bestScore = -Infinity;
 
-      for (let k = -3; k <= 3; k++) {
+      for (let k = -8; k <= 8; k++) {
         const shift = k * baseStep;
         const candRe = cur.re + nx * shift;
         const candIm = cur.im + ny * shift;
         const sample = estimateEscapeSample(candRe, candIm, maxIter);
         const driftPenalty = Math.hypot(candRe - guideRe, candIm - guideIm) / Math.max(baseStep, 1e-18);
         const smoothPenalty = Math.hypot(candRe * 2 - prev.re - next.re, candIm * 2 - prev.im - next.im) / Math.max(baseStep, 1e-18);
-        // Hard priority: interior (black) points first, then longer escape-time outside points.
-        const insideBonus = sample.inside ? 1_000_000 : 0;
-        const score = insideBonus + sample.escapeIter - driftPenalty * 0.45 - smoothPenalty * 0.25;
+        const insideBonus = sample.inside ? 100_000_000 : 0;
+        const escapeScore = sample.escapeIter * (sample.inside ? 4 : 12);
+        const score = insideBonus + escapeScore - driftPenalty * 0.05 - smoothPenalty * 0.03;
 
         if (score > bestScore) {
           bestScore = score;
@@ -1135,44 +1135,33 @@ function buildEscapeGuidedPath(start: { re: number, im: number }, end: { re: num
   return points;
 }
 
-function fractalToScreenPath(start: { re: number, im: number }, end: { re: number, im: number }): {
-  x: number,
-  y: number
-}[] {
+let pathPoints: { re: number, im: number }[] | null = null;
+
+function drawPath() {
+  if (!pathPoints || view.isJulia) return;
   const dXMin = qdFromString(view.xMin);
   const dXMax = qdFromString(view.xMax);
   const dYMin = qdFromString(view.yMin);
   const dYMax = qdFromString(view.yMax);
-
   const xRange = qdSub(dXMax, dXMin);
   const yRange = qdSub(dYMax, dYMin);
-
   const w = canvas.width;
   const h = canvas.height;
-
   const xMinNum = qdHi(dXMin);
   const xRangeNum = qdHi(xRange);
   const yMinNum = qdHi(dYMin);
   const yRangeNum = qdHi(yRange);
-
-  const fractalPath = buildEscapeGuidedPath(start, end);
-  return fractalPath.map(p => ({
+  const screenPath = pathPoints.map(p => ({
     x: (p.re - xMinNum) / xRangeNum * w,
     y: (p.im - yMinNum) / yRangeNum * h,
   }));
-}
-
-let pathPoints: { x: number, y: number }[] | null = null;
-
-function drawPath() {
-  if (!pathPoints || view.isJulia) return;
   ctx.save();
   ctx.strokeStyle = 'red';
   ctx.lineWidth = 10;
   ctx.beginPath();
-  ctx.moveTo(pathPoints[0].x, pathPoints[0].y);
-  for (let i = 1; i < pathPoints.length; i++) {
-    ctx.lineTo(pathPoints[i].x, pathPoints[i].y);
+  ctx.moveTo(screenPath[0].x, screenPath[0].y);
+  for (let i = 1; i < screenPath.length; i++) {
+    ctx.lineTo(screenPath[i].x, screenPath[i].y);
   }
   ctx.stroke();
   ctx.restore();
