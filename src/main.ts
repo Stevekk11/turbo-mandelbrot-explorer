@@ -31,7 +31,7 @@ const DEFAULT_VIEW: ViewState = {
   xMin: '-2.5', xMax: '1.0',
   yMin: '-1.25', yMax: '1.25',
   maxIter: 1000,
-  palette: 0,
+  palette: 2,
   colorSpeed: 0.8,
   colorOffset: 0.35,
   isJulia: false,
