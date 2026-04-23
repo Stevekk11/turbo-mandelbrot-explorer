@@ -1248,73 +1248,7 @@ function initToolbar() {
 
 // ─── Bookmarks ────────────────────────────────────────────────────────────────
 
-const BUILT_IN_BOOKMARKS: Bookmark[] = [
-  {
-    label: '🏠 Home',
-    xMin: '-2.5',
-    xMax: '1.0',
-    yMin: '-1.25',
-    yMax: '1.25',
-    maxIter: 256,
-    palette: 3,
-    isJulia: false,
-    juliaRe: '-0.7269',
-    juliaIm: '0.1889',
-    orbitTrapMode: 0
-  },
-  {
-    label: '🦐 Seahorse',
-    xMin: '-0.76',
-    xMax: '-0.72',
-    yMin: '0.17',
-    yMax: '0.21',
-    maxIter: 512,
-    palette: 5,
-    isJulia: false,
-    juliaRe: '-0.7269',
-    juliaIm: '0.1889',
-    orbitTrapMode: 0
-  },
-  {
-    label: '🐘 Elephant',
-    xMin: '0.24',
-    xMax: '0.28',
-    yMin: '-0.01',
-    yMax: '0.02',
-    maxIter: 512,
-    palette: 1,
-    isJulia: false,
-    juliaRe: '-0.7269',
-    juliaIm: '0.1889',
-    orbitTrapMode: 0
-  },
-  {
-    label: '🌀 Spiral',
-    xMin: '-0.748',
-    xMax: '-0.740',
-    yMin: '0.100',
-    yMax: '0.107',
-    maxIter: 1024,
-    palette: 4,
-    isJulia: false,
-    juliaRe: '-0.7269',
-    juliaIm: '0.1889',
-    orbitTrapMode: 0
-  },
-  {
-    label: '⚡ Julia Orbit',
-    xMin: '-1.5',
-    xMax: '1.5',
-    yMin: '-1.0',
-    yMax: '1.0',
-    maxIter: 256,
-    palette: 1,
-    isJulia: true,
-    juliaRe: '-0.7269',
-    juliaIm: '0.1889',
-    orbitTrapMode: 0
-  },
-];
+const BUILT_IN_BOOKMARKS: Bookmark[] = [];
 
 function loadBookmarks(): Bookmark[] {
   try {
