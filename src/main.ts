@@ -756,7 +756,12 @@ canvas.addEventListener('touchend', (e) => {
       if (isDoubleTap) {
         isDragging = false;
         panSource = null;
-        placePathAtClientPoint(touch.clientX, touch.clientY);
+        if (pathPoints) {
+          pathPoints = null;
+          redrawOverlays();
+        } else {
+          placePathAtClientPoint(touch.clientX, touch.clientY);
+        }
         return;
       }
     }
@@ -810,6 +815,9 @@ document.addEventListener('keydown', (e) => {
     case 'escape':
       if (measureMode && measurePoints.length > 0) {
         measurePoints = [];
+        redrawOverlays();
+      } else if (pathPoints) {
+        pathPoints = null;
         redrawOverlays();
       }
       break;
