@@ -1069,6 +1069,7 @@ function buildEscapeGuidedPath(start: { re: number, im: number }, end: { re: num
   const dYMax = qdFromString(view.yMax);
   const xRange = Math.abs(qdHi(qdSub(dXMax, dXMin)));
   const yRange = Math.abs(qdHi(qdSub(dYMax, dYMin)));
+  const maxIter = Math.max(128, Math.min(4000, view.maxIter));
 
   const dx = end.re - start.re;
   const dy = end.im - start.im;
@@ -1085,53 +1086,72 @@ function buildEscapeGuidedPath(start: { re: number, im: number }, end: { re: num
     });
   }
 
-  const maxIter = Math.max(128, Math.min(4000, view.maxIter));
   const baseStep = Math.max(xRange, yRange) * 0.0008;
 
-  function findInteriorCandidate(
-    cur: { re: number, im: number },
+  function isInteriorPoint(point: { re: number, im: number }): boolean {
+    return estimateEscapeSample(point.re, point.im, maxIter).inside;
+  }
+
+  function segmentStaysInterior(a: { re: number, im: number }, b: { re: number, im: number }): boolean {
+    const samples = [0.2, 0.4, 0.5, 0.6, 0.8];
+    for (const t of samples) {
+      const probe = {
+        re: a.re + (b.re - a.re) * t,
+        im: a.im + (b.im - a.im) * t,
+      };
+      if (!isInteriorPoint(probe)) return false;
+    }
+    return true;
+  }
+
+  function screenDistance(a: { re: number, im: number }, b: { re: number, im: number }): number {
+    const sx = Math.abs((b.re - a.re) / Math.max(xRange, 1e-18)) * canvas.width;
+    const sy = Math.abs((b.im - a.im) / Math.max(yRange, 1e-18)) * canvas.height;
+    return Math.hypot(sx, sy);
+  }
+
+  function chooseInteriorCandidate(
+    target: { re: number, im: number },
     prev: { re: number, im: number },
     next: { re: number, im: number },
     guideRe: number,
     guideIm: number
   ): { re: number, im: number } {
-    let bestPoint = cur;
-    let bestScore = -Infinity;
+    const tx = next.re - prev.re;
+    const ty = next.im - prev.im;
+    const tLen = Math.hypot(tx, ty) || 1;
+    const nx = -ty / tLen;
+    const ny = tx / tLen;
+    const txu = tx / tLen;
+    const tyu = ty / tLen;
 
-    for (let ring = 1; ring <= 12; ring++) {
+    let bestPoint: { re: number, im: number } | null = null;
+    let bestScore = Infinity;
+
+    for (let ring = 1; ring <= 18; ring++) {
       const radius = baseStep * ring;
-      for (let k = -8; k <= 8; k++) {
-        const shift = k * radius / 8;
-        const candRe = cur.re + (next.re - prev.re === 0 ? 0 : 0);
-        const candIm = cur.im + (next.im - prev.im === 0 ? 0 : 0);
+      for (let a = -3; a <= 3; a++) {
+        for (let b = -3; b <= 3; b++) {
+          const candRe = target.re + nx * radius * a + txu * radius * b * 0.35;
+          const candIm = target.im + ny * radius * a + tyu * radius * b * 0.35;
+          const candidate = { re: candRe, im: candIm };
+          if (!isInteriorPoint(candidate)) continue;
 
-        // Move mostly across the local normal so the path can hug a boundary
-        // while still preferring the black region in the current maxIter.
-        const tx = next.re - prev.re;
-        const ty = next.im - prev.im;
-        const tLen = Math.hypot(tx, ty) || 1;
-        const nx = -ty / tLen;
-        const ny = tx / tLen;
-        const finalRe = candRe + nx * shift;
-        const finalIm = candIm + ny * shift;
-        const sample = estimateEscapeSample(finalRe, finalIm, maxIter);
-        if (!sample.inside) continue;
+          const guideDist = Math.hypot(candidate.re - guideRe, candidate.im - guideIm) / Math.max(baseStep, 1e-18);
+          const continuityDist = Math.hypot(candidate.re - prev.re, candidate.im - prev.im) + Math.hypot(candidate.re - next.re, candidate.im - next.im);
+          const score = guideDist * 0.7 + continuityDist * 0.3;
 
-        const driftPenalty = Math.hypot(finalRe - guideRe, finalIm - guideIm) / Math.max(baseStep, 1e-18);
-        const smoothPenalty = Math.hypot(finalRe * 2 - prev.re - next.re, finalIm * 2 - prev.im - next.im) / Math.max(baseStep, 1e-18);
-        const interiorScore = sample.escapeIter;
-        const score = interiorScore - driftPenalty * 0.04 - smoothPenalty * 0.02;
-
-        if (score > bestScore) {
-          bestScore = score;
-          bestPoint = { re: finalRe, im: finalIm };
+          if (score < bestScore) {
+            bestScore = score;
+            bestPoint = candidate;
+          }
         }
       }
 
-      if (bestScore > -Infinity) return bestPoint;
+      if (bestPoint) return bestPoint;
     }
 
-    return cur;
+    return target;
   }
 
   for (let pass = 0; pass < 10; pass++) {
@@ -1140,27 +1160,57 @@ function buildEscapeGuidedPath(start: { re: number, im: number }, end: { re: num
       const next = points[i + 1];
       const cur = points[i];
 
-      const tx = next.re - prev.re;
-      const ty = next.im - prev.im;
-      const tLen = Math.hypot(tx, ty) || 1;
-      const nx = -ty / tLen;
-      const ny = tx / tLen;
-
       const linearT = i / steps;
       const guideRe = start.re + dx * linearT;
       const guideIm = start.im + dy * linearT;
+
       const projected = {
         re: cur.re + (guideRe - cur.re) * 0.35,
         im: cur.im + (guideIm - cur.im) * 0.35,
       };
 
-      points[i] = findInteriorCandidate(projected, prev, next, guideRe, guideIm);
+      points[i] = chooseInteriorCandidate(projected, prev, next, guideRe, guideIm);
     }
+  }
+
+  function refineInteriorPolyline(input: { re: number, im: number }[]): { re: number, im: number }[] {
+    const output: { re: number, im: number }[] = [input[0]];
+    const maxDepth = 10;
+
+    function appendSegment(a: { re: number, im: number }, b: { re: number, im: number }, depth: number): void {
+      if (depth >= maxDepth || (screenDistance(a, b) <= 1.4 && segmentStaysInterior(a, b))) {
+        output.push(b);
+        return;
+      }
+
+      const mid = {
+        re: (a.re + b.re) * 0.5,
+        im: (a.im + b.im) * 0.5,
+      };
+
+      if (!isInteriorPoint(mid)) {
+        const snapped = chooseInteriorCandidate(mid, a, b, mid.re, mid.im);
+        if (snapped.re !== mid.re || snapped.im !== mid.im) {
+          appendSegment(a, snapped, depth + 1);
+          appendSegment(snapped, b, depth + 1);
+          return;
+        }
+      }
+
+      appendSegment(a, mid, depth + 1);
+      appendSegment(mid, b, depth + 1);
+    }
+
+    for (let i = 1; i < input.length; i++) {
+      appendSegment(input[i - 1], input[i], 0);
+    }
+
+    return output;
   }
 
   points[0] = start;
   points[points.length - 1] = end;
-  return points;
+  return refineInteriorPolyline(points);
 }
 
 let pathPoints: { re: number, im: number }[] | null = null;
@@ -1204,7 +1254,6 @@ function drawPath() {
 function formatDistance(d: number): string {
   if (!isFinite(d) || d < 0) return '—';
   if (d === 0) return '0 m';
-
   const prefixes: [number, string][] = [
     [1e3,  'km'],
     [1,    'm' ],
