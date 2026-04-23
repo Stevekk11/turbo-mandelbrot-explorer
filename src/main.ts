@@ -1026,12 +1026,14 @@ function saveScreenshot() {
   link.click();
 }
 
-function estimateEscapeIterations(re: number, im: number, maxIter: number): number {
+function estimateEscapeSample(re: number, im: number, maxIter: number): { inside: boolean; escapeIter: number } {
   let zRe = 0;
   let zIm = 0;
 
   for (let iter = 0; iter < maxIter; iter++) {
-    if (zRe * zRe + zIm * zIm > 4) return iter;
+    if (zRe * zRe + zIm * zIm > 4) {
+      return { inside: false, escapeIter: iter };
+    }
 
     if (view.fractalType === 1) {
       // Burning Ship: z_{n+1} = (|Re(z)| + i|Im(z)|)^2 + c
@@ -1056,8 +1058,8 @@ function estimateEscapeIterations(re: number, im: number, maxIter: number): numb
     }
   }
 
-  // Avoid preferring points deep inside the set when following long escape-time regions.
-  return 0;
+  // Did not escape within maxIter => treat as interior (black) region.
+  return { inside: true, escapeIter: maxIter };
 }
 
 function buildEscapeGuidedPath(start: { re: number, im: number }, end: { re: number, im: number }): { re: number, im: number }[] {
@@ -1110,10 +1112,12 @@ function buildEscapeGuidedPath(start: { re: number, im: number }, end: { re: num
         const shift = k * baseStep;
         const candRe = cur.re + nx * shift;
         const candIm = cur.im + ny * shift;
-        const esc = estimateEscapeIterations(candRe, candIm, maxIter);
+        const sample = estimateEscapeSample(candRe, candIm, maxIter);
         const driftPenalty = Math.hypot(candRe - guideRe, candIm - guideIm) / Math.max(baseStep, 1e-18);
         const smoothPenalty = Math.hypot(candRe * 2 - prev.re - next.re, candIm * 2 - prev.im - next.im) / Math.max(baseStep, 1e-18);
-        const score = esc - driftPenalty * 0.45 - smoothPenalty * 0.25;
+        // Hard priority: interior (black) points first, then longer escape-time outside points.
+        const insideBonus = sample.inside ? 1_000_000 : 0;
+        const score = insideBonus + sample.escapeIter - driftPenalty * 0.45 - smoothPenalty * 0.25;
 
         if (score > bestScore) {
           bestScore = score;
