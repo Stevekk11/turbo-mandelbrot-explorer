@@ -1088,6 +1088,52 @@ function buildEscapeGuidedPath(start: { re: number, im: number }, end: { re: num
   const maxIter = Math.max(128, Math.min(4000, view.maxIter));
   const baseStep = Math.max(xRange, yRange) * 0.0008;
 
+  function findInteriorCandidate(
+    cur: { re: number, im: number },
+    prev: { re: number, im: number },
+    next: { re: number, im: number },
+    guideRe: number,
+    guideIm: number
+  ): { re: number, im: number } {
+    let bestPoint = cur;
+    let bestScore = -Infinity;
+
+    for (let ring = 1; ring <= 12; ring++) {
+      const radius = baseStep * ring;
+      for (let k = -8; k <= 8; k++) {
+        const shift = k * radius / 8;
+        const candRe = cur.re + (next.re - prev.re === 0 ? 0 : 0);
+        const candIm = cur.im + (next.im - prev.im === 0 ? 0 : 0);
+
+        // Move mostly across the local normal so the path can hug a boundary
+        // while still preferring the black region in the current maxIter.
+        const tx = next.re - prev.re;
+        const ty = next.im - prev.im;
+        const tLen = Math.hypot(tx, ty) || 1;
+        const nx = -ty / tLen;
+        const ny = tx / tLen;
+        const finalRe = candRe + nx * shift;
+        const finalIm = candIm + ny * shift;
+        const sample = estimateEscapeSample(finalRe, finalIm, maxIter);
+        if (!sample.inside) continue;
+
+        const driftPenalty = Math.hypot(finalRe - guideRe, finalIm - guideIm) / Math.max(baseStep, 1e-18);
+        const smoothPenalty = Math.hypot(finalRe * 2 - prev.re - next.re, finalIm * 2 - prev.im - next.im) / Math.max(baseStep, 1e-18);
+        const interiorScore = sample.escapeIter;
+        const score = interiorScore - driftPenalty * 0.04 - smoothPenalty * 0.02;
+
+        if (score > bestScore) {
+          bestScore = score;
+          bestPoint = { re: finalRe, im: finalIm };
+        }
+      }
+
+      if (bestScore > -Infinity) return bestPoint;
+    }
+
+    return cur;
+  }
+
   for (let pass = 0; pass < 10; pass++) {
     for (let i = 1; i < points.length - 1; i++) {
       const prev = points[i - 1];
@@ -1103,30 +1149,12 @@ function buildEscapeGuidedPath(start: { re: number, im: number }, end: { re: num
       const linearT = i / steps;
       const guideRe = start.re + dx * linearT;
       const guideIm = start.im + dy * linearT;
+      const projected = {
+        re: cur.re + (guideRe - cur.re) * 0.35,
+        im: cur.im + (guideIm - cur.im) * 0.35,
+      };
 
-      let bestRe = cur.re;
-      let bestIm = cur.im;
-      let bestScore = -Infinity;
-
-      for (let k = -8; k <= 8; k++) {
-        const shift = k * baseStep;
-        const candRe = cur.re + nx * shift;
-        const candIm = cur.im + ny * shift;
-        const sample = estimateEscapeSample(candRe, candIm, maxIter);
-        const driftPenalty = Math.hypot(candRe - guideRe, candIm - guideIm) / Math.max(baseStep, 1e-18);
-        const smoothPenalty = Math.hypot(candRe * 2 - prev.re - next.re, candIm * 2 - prev.im - next.im) / Math.max(baseStep, 1e-18);
-        const insideBonus = sample.inside ? 100_000_000 : 0;
-        const escapeScore = sample.escapeIter * (sample.inside ? 4 : 12);
-        const score = insideBonus + escapeScore - driftPenalty * 0.05 - smoothPenalty * 0.03;
-
-        if (score > bestScore) {
-          bestScore = score;
-          bestRe = candRe;
-          bestIm = candIm;
-        }
-      }
-
-      points[i] = { re: bestRe, im: bestIm };
+      points[i] = findInteriorCandidate(projected, prev, next, guideRe, guideIm);
     }
   }
 
