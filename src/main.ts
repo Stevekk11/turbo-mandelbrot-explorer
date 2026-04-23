@@ -8,7 +8,7 @@ import './style.css';
 import type {Bookmark, PrecisionTier, RecolorTask, RenderResult, RenderTask, ViewState} from './types';
 import {generateRandomPalette, PALETTES, RANDOM_PALETTE_INDEX} from './colorPalettes';
 import {createAudioVisualizer} from './audioVisualizer';
-import {type QD, qdAdd, qdDiv, qdDivNum, qdFromString, qdHi, qdMulNum, qdSub, qdToString,} from './qd';
+import {type QD, qdAdd, qdDiv, qdDivNum, qdFromString, qdHi, qdMul, qdMulNum, qdSub, qdToNumber, qdToString,} from './qd';
 
 // ─── Worker pool ──────────────────────────────────────────────────────────────
 
@@ -31,7 +31,7 @@ const DEFAULT_VIEW: ViewState = {
   xMin: '-2.5', xMax: '1.0',
   yMin: '-1.25', yMax: '1.25',
   maxIter: 1000,
-  palette: 0,
+  palette: 2,
   colorSpeed: 0.8,
   colorOffset: 0.35,
   isJulia: false,
@@ -128,6 +128,7 @@ function animateTiles() {
     if (offscreen) {
       ctx.drawImage(offscreen, 0, 0);
       drawPath();
+      drawMeasurements();
     }
   } else {
     fadeRaf = requestAnimationFrame(animateTiles);
@@ -318,6 +319,7 @@ function handleWorkerMessage(e: MessageEvent) {
         // Blit offscreen to visible canvas immediately
         ctx.drawImage(offscreen, 0, 0);
         drawPath();
+        drawMeasurements();
       }
     }
 
@@ -344,21 +346,33 @@ function handleWorkerMessage(e: MessageEvent) {
 }
 
 
-canvas.addEventListener('dblclick', (e) => {
+function placePathAtClientPoint(clientX: number, clientY: number) {
   if (!pathDrawingMode) return;
   if (view.isJulia) return;
+
+  const dpr = window.devicePixelRatio || 1;
   // Convert screen coordinates to fractal coordinates
-  const [fx, fy] = screenToFractal(e.clientX * devicePixelRatio, e.clientY * devicePixelRatio);
+  const [fx, fy] = screenToFractal(clientX * dpr, clientY * dpr);
 
   // Better: store in fractal space
-  const start = {re: fx[0], im: fy[0]};
-  const end = {re: -0.5, im: 0};
+  const start = { re: fx[0], im: fy[0] };
+  const end = { re: -0.5, im: 0 };
 
-  pathPoints = fractalToScreenPath(start, end);
-  drawPath();
+  pathPoints = buildEscapeGuidedPath(start, end);
+  redrawOverlays();
+}
+
+canvas.addEventListener('dblclick', (e) => {
+  placePathAtClientPoint(e.clientX, e.clientY);
 });
 
 canvas.addEventListener('contextmenu', (e) => {
+  if (measureMode && measurePoints.length > 0) {
+    e.preventDefault();
+    measurePoints = [];
+    redrawOverlays();
+    return;
+  }
   if (pathPoints) {
     e.preventDefault();
     pathPoints = null;
@@ -496,6 +510,11 @@ let panSource: OffscreenCanvas | null = null;
 // Debounce timer for wheel zoom re-renders
 let wheelTimer: ReturnType<typeof setTimeout> | null = null;
 let pathDrawingMode = false;
+let measureMode = false;
+let measurePoints: { re: QD; im: QD }[] = [];
+let lastTapTime = 0;
+let lastTapX = 0;
+let lastTapY = 0;
 
 canvas.addEventListener('mousedown', (e) => {
   if (e.button !== 0) return;
@@ -565,7 +584,21 @@ function endDrag() {
   scheduleRender();
 }
 
-canvas.addEventListener('mouseup', endDrag);
+canvas.addEventListener('mouseup', (e) => {
+  if (e.button !== 0) return;
+  const moved = Math.hypot(e.clientX - dragStartX, e.clientY - dragStartY);
+  if (measureMode && moved < 5) {
+    // Treat as a measurement click — do not re-render the fractal
+    isDragging = false;
+    panSource = null;
+    const dpr = window.devicePixelRatio || 1;
+    const [fx, fy] = screenToFractal(e.clientX * dpr, e.clientY * dpr);
+    measurePoints.push({ re: fx, im: fy });
+    redrawOverlays();
+    return;
+  }
+  endDrag();
+});
 canvas.addEventListener('mouseleave', endDrag);
 
 canvas.addEventListener('wheel', (e) => {
@@ -691,14 +724,62 @@ canvas.addEventListener('touchmove', (e) => {
 }, { passive: false });
 
 canvas.addEventListener('touchend', (e) => {
-    if (isDragging) {
-        endDrag();
-    } else if (e.touches.length === 0) {
-        // End of pinch
-        lastTouchDist = 0;
-        scheduleRender();
+  e.preventDefault();
+
+  if (isDragging) {
+    const touch = e.changedTouches[0];
+    const moved = touch
+      ? Math.hypot(touch.clientX - dragStartX, touch.clientY - dragStartY)
+      : Infinity;
+
+    if (measureMode && moved < 5) {
+      // Treat a tap as a measurement point on touch devices
+      isDragging = false;
+      panSource = null;
+      const dpr = window.devicePixelRatio || 1;
+      const [fx, fy] = screenToFractal(touch.clientX * dpr, touch.clientY * dpr);
+      measurePoints.push({ re: fx, im: fy });
+      redrawOverlays();
+      return;
     }
-});
+
+    if (pathDrawingMode && moved < 5) {
+      const now = performance.now();
+      const isDoubleTap =
+        now - lastTapTime < 320 &&
+        Math.hypot(touch.clientX - lastTapX, touch.clientY - lastTapY) < 24;
+
+      lastTapTime = now;
+      lastTapX = touch.clientX;
+      lastTapY = touch.clientY;
+
+      if (isDoubleTap) {
+        isDragging = false;
+        panSource = null;
+        if (pathPoints) {
+          pathPoints = null;
+          redrawOverlays();
+        } else {
+          placePathAtClientPoint(touch.clientX, touch.clientY);
+        }
+        return;
+      }
+    }
+
+    endDrag();
+  } else if (e.touches.length === 0) {
+    // End of pinch
+    lastTouchDist = 0;
+    scheduleRender();
+  }
+}, { passive: false });
+
+canvas.addEventListener('touchcancel', () => {
+  if (isDragging) {
+    endDrag();
+  }
+  lastTouchDist = 0;
+}, { passive: false });
 
 // ─── Keyboard shortcuts ───────────────────────────────────────────────────────
 
@@ -730,6 +811,15 @@ document.addEventListener('keydown', (e) => {
     case 'x': zoomAt(cx, cy, 2.0); break;
     case 'm':
       togglePathMode();
+      break;
+    case 'escape':
+      if (measureMode && measurePoints.length > 0) {
+        measurePoints = [];
+        redrawOverlays();
+      } else if (pathPoints) {
+        pathPoints = null;
+        redrawOverlays();
+      }
       break;
   }
 });
@@ -936,48 +1026,338 @@ function saveScreenshot() {
   link.click();
 }
 
-function fractalToScreenPath(start: { re: number, im: number }, end: { re: number, im: number }): {
-  x: number,
-  y: number
-}[] {
+function estimateEscapeSample(re: number, im: number, maxIter: number): { inside: boolean; escapeIter: number } {
+  let zRe = 0;
+  let zIm = 0;
+
+  for (let iter = 0; iter < maxIter; iter++) {
+    if (zRe * zRe + zIm * zIm > 4) {
+      return { inside: false, escapeIter: iter };
+    }
+
+    if (view.fractalType === 1) {
+      // Burning Ship: z_{n+1} = (|Re(z)| + i|Im(z)|)^2 + c
+      const aRe = Math.abs(zRe);
+      const aIm = Math.abs(zIm);
+      const nextRe = aRe * aRe - aIm * aIm + re;
+      const nextIm = 2 * aRe * aIm + im;
+      zRe = nextRe;
+      zIm = nextIm;
+    } else if (view.fractalType === 2) {
+      // Tricorn: z_{n+1} = conjugate(z)^2 + c
+      const nextRe = zRe * zRe - zIm * zIm + re;
+      const nextIm = -2 * zRe * zIm + im;
+      zRe = nextRe;
+      zIm = nextIm;
+    } else {
+      // Mandelbrot: z_{n+1} = z^2 + c
+      const nextRe = zRe * zRe - zIm * zIm + re;
+      const nextIm = 2 * zRe * zIm + im;
+      zRe = nextRe;
+      zIm = nextIm;
+    }
+  }
+
+  // Did not escape within maxIter => treat as interior (black) region.
+  return { inside: true, escapeIter: maxIter };
+}
+
+function buildEscapeGuidedPath(start: { re: number, im: number }, end: { re: number, im: number }): { re: number, im: number }[] {
   const dXMin = qdFromString(view.xMin);
   const dXMax = qdFromString(view.xMax);
   const dYMin = qdFromString(view.yMin);
   const dYMax = qdFromString(view.yMax);
+  const xRange = Math.abs(qdHi(qdSub(dXMax, dXMin)));
+  const yRange = Math.abs(qdHi(qdSub(dYMax, dYMin)));
+  const maxIter = Math.max(128, Math.min(4000, view.maxIter));
 
+  const dx = end.re - start.re;
+  const dy = end.im - start.im;
+  const len = Math.hypot(dx, dy);
+  if (len <= Number.EPSILON) return [start, end];
+
+  const steps = Math.max(48, Math.min(220, Math.round(canvas.width / 10)));
+  const points: { re: number, im: number }[] = [];
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    points.push({
+      re: start.re + dx * t,
+      im: start.im + dy * t,
+    });
+  }
+
+  const baseStep = Math.max(xRange, yRange) * 0.0008;
+
+  function isInteriorPoint(point: { re: number, im: number }): boolean {
+    return estimateEscapeSample(point.re, point.im, maxIter).inside;
+  }
+
+  function segmentStaysInterior(a: { re: number, im: number }, b: { re: number, im: number }): boolean {
+    const samples = [0.2, 0.4, 0.5, 0.6, 0.8];
+    for (const t of samples) {
+      const probe = {
+        re: a.re + (b.re - a.re) * t,
+        im: a.im + (b.im - a.im) * t,
+      };
+      if (!isInteriorPoint(probe)) return false;
+    }
+    return true;
+  }
+
+  function screenDistance(a: { re: number, im: number }, b: { re: number, im: number }): number {
+    const sx = Math.abs((b.re - a.re) / Math.max(xRange, 1e-18)) * canvas.width;
+    const sy = Math.abs((b.im - a.im) / Math.max(yRange, 1e-18)) * canvas.height;
+    return Math.hypot(sx, sy);
+  }
+
+  function chooseInteriorCandidate(
+    target: { re: number, im: number },
+    prev: { re: number, im: number },
+    next: { re: number, im: number },
+    guideRe: number,
+    guideIm: number
+  ): { re: number, im: number } {
+    const tx = next.re - prev.re;
+    const ty = next.im - prev.im;
+    const tLen = Math.hypot(tx, ty) || 1;
+    const nx = -ty / tLen;
+    const ny = tx / tLen;
+    const txu = tx / tLen;
+    const tyu = ty / tLen;
+
+    let bestPoint: { re: number, im: number } | null = null;
+    let bestScore = Infinity;
+
+    for (let ring = 1; ring <= 18; ring++) {
+      const radius = baseStep * ring;
+      for (let a = -3; a <= 3; a++) {
+        for (let b = -3; b <= 3; b++) {
+          const candRe = target.re + nx * radius * a + txu * radius * b * 0.35;
+          const candIm = target.im + ny * radius * a + tyu * radius * b * 0.35;
+          const candidate = { re: candRe, im: candIm };
+          if (!isInteriorPoint(candidate)) continue;
+
+          const guideDist = Math.hypot(candidate.re - guideRe, candidate.im - guideIm) / Math.max(baseStep, 1e-18);
+          const continuityDist = Math.hypot(candidate.re - prev.re, candidate.im - prev.im) + Math.hypot(candidate.re - next.re, candidate.im - next.im);
+          const score = guideDist * 0.7 + continuityDist * 0.3;
+
+          if (score < bestScore) {
+            bestScore = score;
+            bestPoint = candidate;
+          }
+        }
+      }
+
+      if (bestPoint) return bestPoint;
+    }
+
+    return target;
+  }
+
+  for (let pass = 0; pass < 10; pass++) {
+    for (let i = 1; i < points.length - 1; i++) {
+      const prev = points[i - 1];
+      const next = points[i + 1];
+      const cur = points[i];
+
+      const linearT = i / steps;
+      const guideRe = start.re + dx * linearT;
+      const guideIm = start.im + dy * linearT;
+
+      const projected = {
+        re: cur.re + (guideRe - cur.re) * 0.35,
+        im: cur.im + (guideIm - cur.im) * 0.35,
+      };
+
+      points[i] = chooseInteriorCandidate(projected, prev, next, guideRe, guideIm);
+    }
+  }
+
+  function refineInteriorPolyline(input: { re: number, im: number }[]): { re: number, im: number }[] {
+    const output: { re: number, im: number }[] = [input[0]];
+    const maxDepth = 10;
+
+    function appendSegment(a: { re: number, im: number }, b: { re: number, im: number }, depth: number): void {
+      if (depth >= maxDepth || (screenDistance(a, b) <= 1.4 && segmentStaysInterior(a, b))) {
+        output.push(b);
+        return;
+      }
+
+      const mid = {
+        re: (a.re + b.re) * 0.5,
+        im: (a.im + b.im) * 0.5,
+      };
+
+      if (!isInteriorPoint(mid)) {
+        const snapped = chooseInteriorCandidate(mid, a, b, mid.re, mid.im);
+        if (snapped.re !== mid.re || snapped.im !== mid.im) {
+          appendSegment(a, snapped, depth + 1);
+          appendSegment(snapped, b, depth + 1);
+          return;
+        }
+      }
+
+      appendSegment(a, mid, depth + 1);
+      appendSegment(mid, b, depth + 1);
+    }
+
+    for (let i = 1; i < input.length; i++) {
+      appendSegment(input[i - 1], input[i], 0);
+    }
+
+    return output;
+  }
+
+  points[0] = start;
+  points[points.length - 1] = end;
+  return refineInteriorPolyline(points);
+}
+
+let pathPoints: { re: number, im: number }[] | null = null;
+
+function drawPath() {
+  if (!pathPoints || view.isJulia) return;
+  const dXMin = qdFromString(view.xMin);
+  const dXMax = qdFromString(view.xMax);
+  const dYMin = qdFromString(view.yMin);
+  const dYMax = qdFromString(view.yMax);
   const xRange = qdSub(dXMax, dXMin);
   const yRange = qdSub(dYMax, dYMin);
-
   const w = canvas.width;
   const h = canvas.height;
-
   const xMinNum = qdHi(dXMin);
   const xRangeNum = qdHi(xRange);
   const yMinNum = qdHi(dYMin);
   const yRangeNum = qdHi(yRange);
-
-  const startX = (start.re - xMinNum) / xRangeNum * w;
-  const startY = (start.im - yMinNum) / yRangeNum * h;
-  const endX = (end.re - xMinNum) / xRangeNum * w;
-  const endY = (end.im - yMinNum) / yRangeNum * h;
-
-  return [{x: startX, y: startY}, {x: endX, y: endY}];
-}
-
-let pathPoints: { x: number, y: number }[] | null = null;
-
-function drawPath() {
-  if (!pathPoints || view.isJulia) return;
+  const screenPath = pathPoints.map(p => ({
+    x: (p.re - xMinNum) / xRangeNum * w,
+    y: (p.im - yMinNum) / yRangeNum * h,
+  }));
   ctx.save();
   ctx.strokeStyle = 'red';
   ctx.lineWidth = 10;
   ctx.beginPath();
-  ctx.moveTo(pathPoints[0].x, pathPoints[0].y);
-  for (let i = 1; i < pathPoints.length; i++) {
-    ctx.lineTo(pathPoints[i].x, pathPoints[i].y);
+  ctx.moveTo(screenPath[0].x, screenPath[0].y);
+  for (let i = 1; i < screenPath.length; i++) {
+    ctx.lineTo(screenPath[i].x, screenPath[i].y);
   }
   ctx.stroke();
   ctx.restore();
+}
+
+// ─── Measurement mode ─────────────────────────────────────────────────────────
+
+/**
+ * Format a fractal-coordinate distance using SI prefixes so the label remains
+ * readable at any zoom level (from km at low zoom down to qm at QD precision).
+ */
+function formatDistance(d: number): string {
+  if (!isFinite(d) || d < 0) return '—';
+  if (d === 0) return '0 m';
+  const prefixes: [number, string][] = [
+    [1e3,  'km'],
+    [1,    'm' ],
+    [1e-3, 'mm'],
+    [1e-6, 'μm'],
+    [1e-9, 'nm'],
+    [1e-12,'pm'],
+    [1e-15,'fm'],
+    [1e-18,'am'],
+    [1e-21,'zm'],
+    [1e-24,'ym'],
+    [1e-27,'rm'],
+    [1e-30,'qm'],
+  ];
+
+  for (const [scale, unit] of prefixes) {
+    if (d >= scale) {
+      return `${(d / scale).toFixed(3)} ${unit}`;
+    }
+  }
+
+  // Beyond standard SI prefix range — use scientific notation
+  return `${d.toExponential(3)} m`;
+}
+
+function fractalToScreenPoint(re: number, im: number): { x: number; y: number } {
+  const xMinNum = qdHi(qdFromString(view.xMin));
+  const xMaxNum = qdHi(qdFromString(view.xMax));
+  const yMinNum = qdHi(qdFromString(view.yMin));
+  const yMaxNum = qdHi(qdFromString(view.yMax));
+  const x = (re - xMinNum) / (xMaxNum - xMinNum) * canvas.width;
+  const y = (im - yMinNum) / (yMaxNum - yMinNum) * canvas.height;
+  return { x, y };
+}
+
+function drawMeasurements() {
+  if (!measureMode || measurePoints.length === 0) return;
+
+  const pts = measurePoints.map(p => fractalToScreenPoint(qdHi(p.re), qdHi(p.im)));
+
+  ctx.save();
+
+  // Lines between consecutive points
+  if (pts.length >= 2) {
+    ctx.strokeStyle = '#00e5ff';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 3]);
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // Dots at each point
+  ctx.fillStyle = '#00e5ff';
+  for (const pt of pts) {
+    ctx.beginPath();
+    ctx.arc(pt.x, pt.y, 5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Total distance label
+  if (measurePoints.length >= 2) {
+    let total = 0;
+    for (let i = 1; i < measurePoints.length; i++) {
+      const dx = qdSub(measurePoints[i].re, measurePoints[i - 1].re);
+      const dy = qdSub(measurePoints[i].im, measurePoints[i - 1].im);
+      total += Math.sqrt(qdToNumber(qdAdd(qdMul(dx, dx), qdMul(dy, dy))));
+    }
+    const label = formatDistance(total);
+
+    const last = pts[pts.length - 1];
+    const fontSize = 14;
+    ctx.font = `bold ${fontSize}px ui-monospace, monospace`;
+    const tw = ctx.measureText(label).width;
+    const pad = 6;
+    const bx = last.x + 12;
+    const by = last.y - 8;
+    ctx.fillStyle = 'rgba(0,0,0,0.75)';
+    ctx.fillRect(bx - pad, by - fontSize, tw + pad * 2, fontSize + pad * 2);
+    ctx.fillStyle = '#00e5ff';
+    ctx.fillText(label, bx, by);
+  }
+
+  ctx.restore();
+}
+
+function redrawOverlays() {
+  if (offscreen) {
+    ctx.drawImage(offscreen, 0, 0);
+    drawPath();
+    drawMeasurements();
+  }
+}
+
+function toggleMeasureMode() {
+  measureMode = !measureMode;
+  const btn = document.getElementById('measure-btn');
+  if (btn) btn.classList.toggle('btn-active', measureMode);
+  if (!measureMode) {
+    measurePoints = [];
+    redrawOverlays();
+  }
 }
 
 function toggleShadows() {
@@ -1240,6 +1620,7 @@ function initToolbar() {
   document.getElementById('audio-visualizer-btn')?.addEventListener('click', toggleAudioPulse);
   document.getElementById('shadows-btn')?.addEventListener('click', toggleShadows);
   document.getElementById('random-palette-btn')?.addEventListener('click', randomizePalette);
+  document.getElementById('measure-btn')?.addEventListener('click', toggleMeasureMode);
 
   // Bookmarks
   document.getElementById('bookmark-btn')?.addEventListener('click', saveBookmark);
