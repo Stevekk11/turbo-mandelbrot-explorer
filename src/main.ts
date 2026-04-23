@@ -716,14 +716,39 @@ canvas.addEventListener('touchmove', (e) => {
 }, { passive: false });
 
 canvas.addEventListener('touchend', (e) => {
-    if (isDragging) {
-        endDrag();
-    } else if (e.touches.length === 0) {
-        // End of pinch
-        lastTouchDist = 0;
-        scheduleRender();
+  e.preventDefault();
+
+  if (isDragging) {
+    const touch = e.changedTouches[0];
+    const moved = touch
+      ? Math.hypot(touch.clientX - dragStartX, touch.clientY - dragStartY)
+      : Infinity;
+
+    if (measureMode && moved < 5) {
+      // Treat a tap as a measurement point on touch devices
+      isDragging = false;
+      panSource = null;
+      const dpr = window.devicePixelRatio || 1;
+      const [fx, fy] = screenToFractal(touch.clientX * dpr, touch.clientY * dpr);
+      measurePoints.push({ re: fx, im: fy });
+      redrawOverlays();
+      return;
     }
-});
+
+    endDrag();
+  } else if (e.touches.length === 0) {
+    // End of pinch
+    lastTouchDist = 0;
+    scheduleRender();
+  }
+}, { passive: false });
+
+canvas.addEventListener('touchcancel', () => {
+  if (isDragging) {
+    endDrag();
+  }
+  lastTouchDist = 0;
+}, { passive: false });
 
 // ─── Keyboard shortcuts ───────────────────────────────────────────────────────
 
