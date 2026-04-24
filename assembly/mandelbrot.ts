@@ -34,14 +34,13 @@ export function allocBuffer(width: i32, height: i32): i32 {
  * @param juliaRe Real part of Julia constant (ignored for Mandelbrot)
  * @param juliaIm Imaginary part of Julia constant (ignored for Mandelbrot)
  * @param isJulia Non-zero for Julia set, zero for Mandelbrot
- * @param orbitTrapMode Orbit trap mode (0=none, 1=point, 2=cross)
  * @param fractalType Fractal formula (0=Mandelbrot, 1=Burning Ship, 2=Tricorn)
  */
 export function computeTile(
-  xMin: f64, yMin: f64, xMax: f64, yMax: f64,
-  width: i32, height: i32, maxIter: i32,
-  juliaRe: f64, juliaIm: f64, isJulia: i32,
-  orbitTrapMode: i32, fractalType: i32
+    xMin: f64, yMin: f64, xMax: f64, yMax: f64,
+    width: i32, height: i32, maxIter: i32,
+    juliaRe: f64, juliaIm: f64, isJulia: i32,
+    fractalType: i32
 ): void {
   const dx: f64 = (xMax - xMin) / <f64>width;
   const dy: f64 = (yMax - yMin) / <f64>height;
@@ -62,7 +61,6 @@ export function computeTile(
       let iter: i32 = 0;
       let x2: f64 = zRe * zRe;
       let y2: f64 = zIm * zIm;
-      let minDist: f64 = 1e20;
 
       while (x2 + y2 <= 100000.0 && iter < maxIter) {
         if (fractalType == 1) {
@@ -71,7 +69,6 @@ export function computeTile(
           zRe = x2 - y2 + cRe;
         } else if (fractalType == 2) {
           // Tricorn (Mandelbar): z_{n+1} = conj(z_n)² + c
-          // conj(z_n)² = (zRe - i·zIm)² = (zRe² - zIm²) - i·2·zRe·zIm
           zIm = -2.0 * zRe * zIm + cIm;
           zRe = x2 - y2 + cRe;
         } else {
@@ -82,29 +79,14 @@ export function computeTile(
         x2 = zRe * zRe;
         y2 = zIm * zIm;
         iter++;
-
-        if (orbitTrapMode > 0) {
-          let dist: f64 = 1e20;
-          if (orbitTrapMode == 1) {
-            dist = Math.sqrt(x2 + y2);
-          } else if (orbitTrapMode == 2) {
-            dist = Math.abs(zRe * zIm);
-          }
-          if (dist < minDist) {
-            minDist = dist;
-          }
-        }
       }
 
       let val: f32;
-      if (orbitTrapMode > 0) {
-        val = (minDist < 1e19) ? <f32>(Math.log(minDist + 1e-10) * -10.0) : -1.0;
-      } else if (iter >= maxIter) {
+      if (iter >= maxIter) {
         // Interior of set → black
         val = -1.0;
       } else {
         // Smooth iteration count with large escape radius
-        // Formula: n + 1 - log2(ln|z|) - but optimized for AssemblyScript:
         const log_zn: f64 = Math.log(x2 + y2) * 0.5;
         const nu: f64 = Math.log(log_zn / Math.LN2) / Math.LN2;
         val = <f32>(<f64>iter + 1.0 - nu);

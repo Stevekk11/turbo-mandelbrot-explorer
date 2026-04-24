@@ -50,7 +50,6 @@ const DEFAULT_VIEW: ViewState = {
   juliaRe: '-0.7269',
   juliaIm: '0.1889',
   zoom: '1',
-  orbitTrapMode: 0,
   shadows: false,
   fractalType: 0,
 };
@@ -248,7 +247,6 @@ function scheduleRender() {
         palette: view.palette,
         colorSpeed: view.colorSpeed,
         colorOffset: view.colorOffset,
-        orbitTrapMode: view.orbitTrapMode,
         shadows: view.shadows,
         fractalType: view.fractalType,
         precisionTier,
@@ -1024,26 +1022,6 @@ document.getElementById('mini-mandelbrot-canvas')?.addEventListener('click', (e)
   scheduleRender();
 });
 
-const ORBIT_TRAP_MODES = [
-  {label: 'None', value: 0},
-  {label: 'Celtic', value: 1},
-  {label: 'Spiral', value: 2},
-  {label: 'Square', value: 3},
-];
-
-function updateOrbitTrapUI() {
-  const sel = document.getElementById('orbit-trap-select') as HTMLSelectElement;
-  if (!sel) return;
-
-  sel.innerHTML = ORBIT_TRAP_MODES.map(m => `
-    <option value="${m.value}" ${m.value === view.orbitTrapMode ? 'selected' : ''}>
-      ${m.label}
-    </option>
-  `).join('');
-}
-
-updateOrbitTrapUI();
-
 // ─── Screenshot ───────────────────────────────────────────────────────────────
 
 function saveScreenshot() {
@@ -1551,7 +1529,6 @@ function initSettingsPanel() {
     });
   }
 
-  // Orbit Trap select (kept for bookmark compatibility — no UI exposed)
 
   // Color speed slider
   const speedSlider = document.getElementById('speed-slider') as HTMLInputElement;
@@ -1685,12 +1662,7 @@ function applyBookmark(bm: Bookmark) {
   view.isJulia = bm.isJulia;
   view.juliaRe = bm.juliaRe;
   view.juliaIm = bm.juliaIm;
-  view.orbitTrapMode = bm.orbitTrapMode || 0;
   updateZoom(); updateIterDisplay(); updatePaletteUI();
-
-  const orbitTrapSelect = document.getElementById('orbit-trap-select') as HTMLSelectElement;
-  if (orbitTrapSelect) orbitTrapSelect.value = String(view.orbitTrapMode);
-  
   scheduleRender();
 }
 

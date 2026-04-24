@@ -19,10 +19,10 @@ interface MandelbrotWasm {
     memory: WebAssembly.Memory;
     allocBuffer: (w: number, h: number) => number;
     computeTile: (
-      xMin: number, yMin: number, xMax: number, yMax: number,
-      width: number, height: number, maxIter: number,
-      juliaRe: number, juliaIm: number, isJulia: number, orbitTrapMode: number,
-      fractalType: number
+        xMin: number, yMin: number, xMax: number, yMax: number,
+        width: number, height: number, maxIter: number,
+        juliaRe: number, juliaIm: number, isJulia: number,
+        fractalType: number
     ) => void;
     getBufferSize: () => number;
   };
@@ -38,7 +38,6 @@ async function loadWasm(url: string): Promise<void> {
     });
     wasmInstance = result.instance as unknown as MandelbrotWasm;
   } catch (e) {
-    // Fallback: fetch as ArrayBuffer (needed when MIME type is not application/wasm)
     try {
       const response = await fetch(url);
       const bytes = await response.arrayBuffer();
@@ -55,10 +54,10 @@ async function loadWasm(url: string): Promise<void> {
 // ─── JavaScript fallback for normal-precision tiles (WASM unavailable) ───────
 
 function computeTileJS(
-  xMin: number, yMin: number, xMax: number, yMax: number,
-  width: number, height: number, maxIter: number,
-  juliaRe: number, juliaIm: number, isJulia: boolean, orbitTrapMode: number,
-  buf: Float32Array, fractalType = 0
+    xMin: number, yMin: number, xMax: number, yMax: number,
+    width: number, height: number, maxIter: number,
+    juliaRe: number, juliaIm: number, isJulia: boolean,
+    buf: Float32Array, fractalType = 0
 ): void {
   const dx = (xMax - xMin) / width;
   const dy = (yMax - yMin) / height;
@@ -76,42 +75,25 @@ function computeTileJS(
       let iter = 0;
       let x2 = zRe * zRe;
       let y2 = zIm * zIm;
-      let minDist = 1e20;
 
       while (x2 + y2 <= 100000.0 && iter < maxIter) {
         if (fractalType === 1) {
-          // Burning Ship: take absolute values before squaring
           zIm = 2.0 * Math.abs(zRe) * Math.abs(zIm) + cIm;
           zRe = x2 - y2 + cRe;
         } else if (fractalType === 2) {
-          // Tricorn (Mandelbar): z_{n+1} = conj(z_n)² + c
-          // conj(z_n)² = (zRe - i·zIm)² = (zRe² - zIm²) - i·2·zRe·zIm
           zIm = -2.0 * zRe * zIm + cIm;
           zRe = x2 - y2 + cRe;
         } else {
-          // Standard Mandelbrot
           zIm = 2.0 * zRe * zIm + cIm;
           zRe = x2 - y2 + cRe;
         }
         x2 = zRe * zRe;
         y2 = zIm * zIm;
         iter++;
-
-        if (orbitTrapMode > 0) {
-          let dist = 1e20;
-          if (orbitTrapMode === 1) {
-            dist = Math.sqrt(x2 + y2);
-          } else if (orbitTrapMode === 2) {
-            dist = Math.abs(zRe * zIm);
-          }
-          if (dist < minDist) minDist = dist;
-        }
       }
 
       let val: number;
-      if (orbitTrapMode > 0) {
-        val = minDist < 1e19 ? Math.log(minDist + 1e-10) * -10.0 : -1.0;
-      } else if (iter >= maxIter) {
+      if (iter >= maxIter) {
         val = -1.0;
       } else {
         const log_zn = Math.log(x2 + y2) * 0.5;
@@ -125,47 +107,23 @@ function computeTileJS(
 }
 
 // ─── Perturbation-theory renderer for deep-zoom tiles ─────────────────────────
-//
-// Standard Mandelbrot / Julia iteration requires arbitrary-precision
-// coordinates once the viewport width drops below ~1e-13 (float64 runs out
-// of mantissa bits).  Perturbation theory sidesteps that by computing one
-// high-precision "reference orbit" with DD arithmetic, then deriving every
-// other pixel's iteration count from a cheap float64 perturbation delta.
-//
-// For a Mandelbrot pixel c = C_ref + Δc :
-//   δ_0 = 0
-//   δ_{n+1} = (2·Z_n + δ_n)·δ_n + Δc          (float64 complex arithmetic)
-//   z_n = Z_n + δ_n                              (actual pixel iterate)
-//
-// For a Julia pixel with start p = P_ref + Δp :
-//   δ_0 = Δp
-//   δ_{n+1} = (2·Z_n + δ_n)·δ_n                 (no Δc term — absorbed in δ_0)
-//
-// Reference orbit Z_n is computed in DD to stay accurate beyond 10^15 zoom.
 
 function computeTilePerturbation(
-  xMinStr: string, yMinStr: string, xMaxStr: string, yMaxStr: string,
-  width: number, height: number, maxIter: number,
-  juliaReStr: string, juliaImStr: string, isJulia: boolean,
-  orbitTrapMode: number,
-  refReStr: string, refImStr: string,
-  buf: Float32Array
+    xMinStr: string, yMinStr: string, xMaxStr: string, yMaxStr: string,
+    width: number, height: number, maxIter: number,
+    juliaReStr: string, juliaImStr: string, isJulia: boolean,
+    refReStr: string, refImStr: string,
+    buf: Float32Array
 ): void {
-  // ── Reference point and iteration constant (both in DD) ────────────────────
   const refRe = ddFromString(refReStr);
   const refIm = ddFromString(refImStr);
 
-  // For Mandelbrot the constant equals the reference; for Julia it is fixed.
   const cRe_dd: DD = isJulia ? ddFromString(juliaReStr) : refRe;
   const cIm_dd: DD = isJulia ? ddFromString(juliaImStr) : refIm;
 
-  // ── Reference orbit (computed in DD, stored as float64 for the inner loop) ─
-  // We allocate maxIter+1 slots:  orbitRe[n] = Re(Z_n), orbitIm[n] = Im(Z_n).
-  // Float64Array is zero-initialised, so out-of-bounds reads return 0.
   const orbitRe = new Float64Array(maxIter + 1);
   const orbitIm = new Float64Array(maxIter + 1);
 
-  // Julia orbit starts at the reference pixel; Mandelbrot starts at 0.
   let zRe: DD = isJulia ? refRe : [0, 0];
   let zIm: DD = isJulia ? refIm : [0, 0];
 
@@ -174,13 +132,11 @@ function computeTilePerturbation(
 
   let refOrbitLen = 0;
   for (let n = 0; n < maxIter; n++) {
-    // Escape check on the float64 approximation (sufficient for the orbit)
     const r2 = zRe[0] * zRe[0] + zIm[0] * zIm[0];
     if (r2 > 100000.0) {
       refOrbitLen = n;
       break;
     }
-    // Z_{n+1} = Z_n^2 + C  (DD arithmetic)
     const newZRe = ddAdd(ddSub(ddMul(zRe, zRe), ddMul(zIm, zIm)), cRe_dd);
     const newZIm = ddAdd(ddMulNum(ddMul(zRe, zIm), 2.0), cIm_dd);
     zRe = newZRe;
@@ -189,9 +145,7 @@ function computeTilePerturbation(
     orbitRe[n + 1] = zRe[0];
     orbitIm[n + 1] = zIm[0];
   }
-  // refOrbitLen == maxIter means the reference is interior (never escaped).
 
-  // ── Tile pixel bounds in DD ─────────────────────────────────────────────────
   const xMin_dd = ddFromString(xMinStr);
   const xMax_dd = ddFromString(xMaxStr);
   const yMin_dd = ddFromString(yMinStr);
@@ -199,10 +153,8 @@ function computeTilePerturbation(
   const dx_dd = ddDivNum(ddSub(xMax_dd, xMin_dd), width);
   const dy_dd = ddDivNum(ddSub(yMax_dd, yMin_dd), height);
 
-  // ── Per-pixel perturbation ─────────────────────────────────────────────────
   for (let py = 0; py < height; py++) {
     const pixelIm_dd = ddAdd(yMin_dd, ddMulNum(dy_dd, py));
-    // Δcy = pixel_im − ref_im  (as float64; hi+lo gives best f64 representation)
     const dcImDD = ddSub(pixelIm_dd, refIm);
     const dcImF  = dcImDD[0] + dcImDD[1];
 
@@ -211,32 +163,22 @@ function computeTilePerturbation(
       const dcReDD = ddSub(pixelRe_dd, refRe);
       const dcReF  = dcReDD[0] + dcReDD[1];
 
-      // Initial perturbation δ_0:
-      //   Mandelbrot → 0 (Δc enters via the recurrence term)
-      //   Julia      → Δp (pixel offset from reference start)
       let dRe = isJulia ? dcReF : 0.0;
       let dIm = isJulia ? dcImF : 0.0;
 
-      // The recurrence term Δc that is added each step:
-      //   Mandelbrot → Δc,  Julia → 0 (already folded into δ_0)
       const loopDcRe = isJulia ? 0.0 : dcReF;
       const loopDcIm = isJulia ? 0.0 : dcImF;
 
       let iter = 0;
       let val  = -1.0;
-      let minDist = 1e20;
-
-      // n is the current index into the reference orbit.  It is reset to 0 on
-      // rebasing so a single pixel may traverse the reference orbit many times.
       let n = 0;
 
       while (iter < maxIter) {
-        if (n >= refOrbitLen) break; // reference orbit exhausted — handled by fallback below
+        if (n >= refOrbitLen) break;
 
         const ZnRe = orbitRe[n];
         const ZnIm = orbitIm[n];
 
-        // δ_{n+1} = (2·Z_n + δ_n)·δ_n + Δc
         const a = 2.0 * ZnRe + dRe;
         const b = 2.0 * ZnIm + dIm;
         const newDRe = a * dRe - b * dIm + loopDcRe;
@@ -245,39 +187,17 @@ function computeTilePerturbation(
         dIm = newDIm;
         iter++;
 
-        // z_{n+1} = Z_{n+1} + δ_{n+1}
-        // orbitRe[n+1] holds Z_{n+1} for n+1 ≤ refOrbitLen (always within loop).
         const zActRe = orbitRe[n + 1] + dRe;
         const zActIm = orbitIm[n + 1] + dIm;
         const r2 = zActRe * zActRe + zActIm * zActIm;
 
-        if (orbitTrapMode > 0) {
-          const dist = orbitTrapMode === 1
-            ? Math.sqrt(r2)
-            : Math.abs(zActRe * zActIm);
-          if (dist < minDist) minDist = dist;
-        }
-
         if (r2 > 100000.0) {
-          if (orbitTrapMode === 0) {
-            const log_zn = Math.log(r2) * 0.5;
-            const nu = Math.log(log_zn / Math.LN2) / Math.LN2;
-            val = iter + 1.0 - nu;
-          }
+          const log_zn = Math.log(r2) * 0.5;
+          const nu = Math.log(log_zn / Math.LN2) / Math.LN2;
+          val = iter + 1.0 - nu;
           break;
         }
 
-        // ── Perturbation rebasing ──────────────────────────────────────────────
-        // When |δ_{n+1}|² > |Z_{n+1}|² the floating-point perturbation has
-        // drifted too far from the true orbit.  Reset the reference orbit index
-        // to 0 and set δ = z_actual − Z_0 so the next step re-anchors the
-        // perturbation to the start of the reference.  This allows the pixel to
-        // accumulate arbitrarily many iterations without glitch artifacts.
-        // For Mandelbrot Z_0 = 0, so δ_new = z_actual.
-        // For Julia     Z_0 = refStart, so δ_new = z_actual − orbitRe/Im[0].
-        //
-        // Index safety: n < refOrbitLen ≤ maxIter, and orbitRe has maxIter+1
-        // elements, so orbitRe[n+1] ≤ orbitRe[maxIter] is always in bounds.
         const d2    = dRe * dRe + dIm * dIm;
         const Zn1Re = orbitRe[n + 1];
         const Zn1Im = orbitIm[n + 1];
@@ -290,12 +210,7 @@ function computeTilePerturbation(
         }
       }
 
-      // When the reference orbit escaped early (refOrbitLen < maxIter) the
-      // perturbation approximation can break down for pixels close to the set
-      // boundary that need more iterations.  Continue from the last computed
-      // z = Z_{refOrbitLen} + δ using standard float64 iteration so they are
-      // correctly classified rather than being left as interior (-1).
-      if (val === -1.0 && refOrbitLen < maxIter && iter < maxIter && orbitTrapMode === 0) {
+      if (val === -1.0 && refOrbitLen < maxIter && iter < maxIter) {
         let zRe = orbitRe[refOrbitLen] + dRe;
         let zIm = orbitIm[refOrbitLen] + dIm;
         const cPixelRe = isJulia ? Number(juliaReStr) : (refRe[0] + dcReF);
@@ -317,10 +232,6 @@ function computeTilePerturbation(
         }
       }
 
-      if (orbitTrapMode > 0) {
-        val = minDist < 1e19 ? Math.log(minDist + 1e-10) * -10.0 : -1.0;
-      }
-
       buf[py * width + px] = val;
     }
   }
@@ -330,7 +241,6 @@ function computeTilePerturbationQD(
     xMinStr: string, yMinStr: string, xMaxStr: string, yMaxStr: string,
     width: number, height: number, maxIter: number,
     juliaReStr: string, juliaImStr: string, isJulia: boolean,
-    orbitTrapMode: number,
     refReStr: string, refImStr: string,
     buf: Float32Array
 ): void {
@@ -376,7 +286,6 @@ function computeTilePerturbationQD(
   for (let py = 0; py < height; py++) {
     const pixelIm_qd = qdAdd(yMin_qd, qdMulNum(dy_qd, py));
     const dcImQD = qdSub(pixelIm_qd, refIm);
-    // Use all 4 components for better precision in the float64 perturbation
     const dcImF = (dcImQD[0] + dcImQD[1]) + (dcImQD[2] + dcImQD[3]);
 
     for (let px = 0; px < width; px++) {
@@ -392,7 +301,6 @@ function computeTilePerturbationQD(
 
       let iter = 0;
       let val = -1.0;
-      let minDist = 1e20;
       let n = 0;
 
       while (iter < maxIter) {
@@ -413,19 +321,10 @@ function computeTilePerturbationQD(
         const zActIm = orbitIm[n + 1] + dIm;
         const r2 = zActRe * zActRe + zActIm * zActIm;
 
-        if (orbitTrapMode > 0) {
-          const dist = orbitTrapMode === 1
-              ? Math.sqrt(r2)
-              : Math.abs(zActRe * zActIm);
-          if (dist < minDist) minDist = dist;
-        }
-
         if (r2 > 100000.0) {
-          if (orbitTrapMode === 0) {
-            const log_zn = Math.log(r2) * 0.5;
-            const nu = Math.log(log_zn / Math.LN2) / Math.LN2;
-            val = iter + 1.0 - nu;
-          }
+          const log_zn = Math.log(r2) * 0.5;
+          const nu = Math.log(log_zn / Math.LN2) / Math.LN2;
+          val = iter + 1.0 - nu;
           break;
         }
 
@@ -441,7 +340,7 @@ function computeTilePerturbationQD(
         }
       }
 
-      if (val === -1.0 && refOrbitLen < maxIter && iter < maxIter && orbitTrapMode === 0) {
+      if (val === -1.0 && refOrbitLen < maxIter && iter < maxIter) {
         let zRe = orbitRe[refOrbitLen] + dRe;
         let zIm = orbitIm[refOrbitLen] + dIm;
         const cPixelRe = isJulia ? Number(juliaReStr) : (qdHi(refRe) + dcReF_p);
@@ -464,30 +363,25 @@ function computeTilePerturbationQD(
         }
       }
 
-      if (orbitTrapMode > 0) {
-        val = minDist < 1e19 ? Math.log(minDist + 1e-10) * -10.0 : -1.0;
-      }
-
       buf[py * width + px] = val;
     }
   }
 }
 
 // ─── Per-tile iteration data cache ────────────────────────────────────────────
-// Keyed by `${tileX},${tileY}`. Cleared when main thread sends clearCache.
 
 const iterCache = new Map<string, Float32Array>();
 
 // ─── Colorization ─────────────────────────────────────────────────────────────
 
 function applyColorization(
-  iterBuf: Float32Array,
-  tileW: number,
-  tileH: number,
-  palette: number,
-  colorSpeed: number,
-  colorOffset: number,
-  shadows: boolean
+    iterBuf: Float32Array,
+    tileW: number,
+    tileH: number,
+    palette: number,
+    colorSpeed: number,
+    colorOffset: number,
+    shadows: boolean
 ): Uint8ClampedArray {
   const paletteData = PALETTES[palette].data;
   const size = tileW * tileH;
@@ -496,7 +390,6 @@ function applyColorization(
   for (let i = 0; i < size; i++) {
     const val = iterBuf[i];
     if (val < 0) {
-      // Interior — black; alpha is set on the next line
       rgba[i * 4 + 3] = 255;
       continue;
     }
@@ -515,17 +408,14 @@ function applyColorization(
     if (shadows) {
       const py = Math.floor(i / tileW);
       const px = i % tileW;
-      // Sample neighbours, clamping to tile edges; use val for interior pixels
       const vL = px > 0          ? (iterBuf[py * tileW + (px - 1)] < 0 ? val : iterBuf[py * tileW + (px - 1)]) : val;
       const vR = px < tileW - 1  ? (iterBuf[py * tileW + (px + 1)] < 0 ? val : iterBuf[py * tileW + (px + 1)]) : val;
       const vU = py > 0          ? (iterBuf[(py - 1) * tileW + px]  < 0 ? val : iterBuf[(py - 1) * tileW + px])  : val;
       const vD = py < tileH - 1  ? (iterBuf[(py + 1) * tileW + px]  < 0 ? val : iterBuf[(py + 1) * tileW + px])  : val;
-      // Surface gradient → normal
       const nx = -(vR - vL);
       const ny = -(vD - vU);
       const nz = 2.0;
       const nlen = Math.sqrt(nx * nx + ny * ny + nz * nz);
-      // Light from upper-left
       const lx = 0.5774, ly = 0.5774, lz = 0.5774;
       const dot = (nx / nlen) * lx + (ny / nlen) * ly + (nz / nlen) * lz;
       const light = Math.max(0.25, Math.min(1.0, dot));
@@ -548,12 +438,11 @@ let _jsBuf: Float32Array | null = null;
 
 function renderTile(task: RenderTask): ArrayBuffer {
   const { tileX, tileY, tileW, tileH, xMin, yMin, xMax, yMax, maxIter,
-    juliaRe, juliaIm, isJulia, palette, colorSpeed, colorOffset, orbitTrapMode, shadows
+    juliaRe, juliaIm, isJulia, palette, colorSpeed, colorOffset, shadows
   } = task;
   const fractalType = task.fractalType ?? 0;
   const size = tileW * tileH;
 
-  // Parse highs from QD/DD/number strings uniformly.
   const xMinHi = qdHi(qdFromString(xMin));
   const yMinHi = qdHi(qdFromString(yMin));
   const xMaxHi = qdHi(qdFromString(xMax));
@@ -561,43 +450,36 @@ function renderTile(task: RenderTask): ArrayBuffer {
 
   const dxCheck = xMaxHi - xMinHi;
   const inferredTier = !Number.isFinite(dxCheck) ? 'qd' : (Math.abs(dxCheck) < 1e-28 ? 'qd' : (Math.abs(dxCheck) < 2e-13 ? 'dd' : 'wasm'));
-  // Perturbation theory only applies to Mandelbrot (fractalType 0); fall back to
-  // JS for Burning Ship and Tricorn which have non-analytic iteration formulas.
   const baseTier = task.precisionTier ?? inferredTier;
   const precisionTier = fractalType !== 0 && baseTier !== 'wasm' ? 'wasm' : baseTier;
 
   let iterBuf: Float32Array;
 
   if (wasmInstance && precisionTier === 'wasm') {
-    // ─── WASM path ──────────────────────────────────────────────────────────
     const ptr = wasmInstance.exports.allocBuffer(tileW, tileH);
     wasmInstance.exports.computeTile(
-      xMinHi, yMinHi, xMaxHi, yMaxHi,
-      tileW, tileH, maxIter,
-      Number(juliaRe), Number(juliaIm), isJulia ? 1 : 0, orbitTrapMode || 0,
-      fractalType
+        xMinHi, yMinHi, xMaxHi, yMaxHi,
+        tileW, tileH, maxIter,
+        Number(juliaRe), Number(juliaIm), isJulia ? 1 : 0,
+        fractalType
     );
     iterBuf = new Float32Array(
-      wasmInstance.exports.memory.buffer,
-      ptr,
-      size
+        wasmInstance.exports.memory.buffer,
+        ptr,
+        size
     );
   } else if (precisionTier === 'wasm') {
-    // ─── JS fallback for normal-precision (WASM unavailable) ───────────────
     if (!_jsBuf || _jsBuf.length < size) {
       _jsBuf = new Float32Array(size);
     }
     computeTileJS(
-      xMinHi, yMinHi, xMaxHi, yMaxHi,
-      tileW, tileH, maxIter,
-      Number(juliaRe), Number(juliaIm), isJulia, orbitTrapMode || 0,
-      _jsBuf, fractalType
+        xMinHi, yMinHi, xMaxHi, yMaxHi,
+        tileW, tileH, maxIter,
+        Number(juliaRe), Number(juliaIm), isJulia,
+        _jsBuf, fractalType
     );
     iterBuf = _jsBuf;
   } else if (precisionTier === 'dd') {
-    // ─── Perturbation path for deep zoom ────────────────────────────────────
-    // refRe / refIm are the view-centre coordinates supplied by main.ts.
-    // Fall back to using the tile's own xMin/yMin if somehow absent.
     const refRe = task.refRe ?? xMin;
     const refIm = task.refIm ?? yMin;
 
@@ -605,11 +487,11 @@ function renderTile(task: RenderTask): ArrayBuffer {
       _jsBuf = new Float32Array(size);
     }
     computeTilePerturbation(
-      xMin, yMin, xMax, yMax,
-      tileW, tileH, maxIter,
-      juliaRe, juliaIm, isJulia, orbitTrapMode || 0,
-      refRe, refIm,
-      _jsBuf
+        xMin, yMin, xMax, yMax,
+        tileW, tileH, maxIter,
+        juliaRe, juliaIm, isJulia,
+        refRe, refIm,
+        _jsBuf
     );
     iterBuf = _jsBuf;
   } else {
@@ -622,14 +504,13 @@ function renderTile(task: RenderTask): ArrayBuffer {
     computeTilePerturbationQD(
         xMin, yMin, xMax, yMax,
         tileW, tileH, maxIter,
-        juliaRe, juliaIm, isJulia, orbitTrapMode || 0,
+        juliaRe, juliaIm, isJulia,
         refRe, refIm,
         _jsBuf
     );
     iterBuf = _jsBuf;
   }
 
-  // Cache a copy of the iteration data for fast recoloring later
   iterCache.set(`${tileX},${tileY}`, iterBuf.slice(0));
 
   return applyColorization(iterBuf, tileW, tileH, palette, colorSpeed, colorOffset, shadows ?? false).buffer as ArrayBuffer;
@@ -667,38 +548,37 @@ self.onmessage = async (e: MessageEvent<ToWorkerMessage>) => {
 
   if (msg.type === 'render') {
     const buf = renderTile(msg);
-    // Transfer buffer ownership back to main thread (zero-copy)
     (self as unknown as Worker).postMessage(
-      {
-        type: 'result',
-        taskId: msg.taskId,
-        gen: msg.gen,
-        tileX: msg.tileX,
-        tileY: msg.tileY,
-        tileW: msg.tileW,
-        tileH: msg.tileH,
-        imageData: buf,
-      },
-      [buf]
+        {
+          type: 'result',
+          taskId: msg.taskId,
+          gen: msg.gen,
+          tileX: msg.tileX,
+          tileY: msg.tileY,
+          tileW: msg.tileW,
+          tileH: msg.tileH,
+          imageData: buf,
+        },
+        [buf]
     );
     return;
   }
 
   if (msg.type === 'recolor') {
     const buf = recolorTile(msg);
-    if (!buf) return; // no cached data — silently skip
+    if (!buf) return;
     (self as unknown as Worker).postMessage(
-      {
-        type: 'result',
-        taskId: msg.taskId,
-        gen: msg.gen,
-        tileX: msg.tileX,
-        tileY: msg.tileY,
-        tileW: msg.tileW,
-        tileH: msg.tileH,
-        imageData: buf,
-      },
-      [buf]
+        {
+          type: 'result',
+          taskId: msg.taskId,
+          gen: msg.gen,
+          tileX: msg.tileX,
+          tileY: msg.tileY,
+          tileW: msg.tileW,
+          tileH: msg.tileH,
+          imageData: buf,
+        },
+        [buf]
     );
   }
 };
