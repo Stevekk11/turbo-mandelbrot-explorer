@@ -12,7 +12,7 @@ import {type QD, qdAdd, qdDiv, qdDivNum, qdFromString, qdHi, qdMul, qdMulNum, qd
 
 // ─── Worker pool ──────────────────────────────────────────────────────────────
 
-const NUM_WORKERS = Math.max(2, Math.min(8, navigator.hardwareConcurrency ?? 4));
+const NUM_WORKERS = Math.max(2, Math.min(16, navigator.hardwareConcurrency ?? 4));
 const workers: Worker[] = [];
 let workersReady = 0;
 
