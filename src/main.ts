@@ -8,7 +8,19 @@ import './style.css';
 import type {Bookmark, PrecisionTier, RecolorTask, RenderResult, RenderTask, ViewState} from './types';
 import {generateRandomPalette, PALETTES, RANDOM_PALETTE_INDEX} from './colorPalettes';
 import {createAudioVisualizer} from './audioVisualizer';
-import {type QD, qdAdd, qdDiv, qdDivNum, qdFromString, qdHi, qdMul, qdMulNum, qdSub, qdToNumber, qdToString,} from './qd';
+import {
+  type QD,
+  qdAdd,
+  qdDiv,
+  qdDivNum,
+  qdFromString,
+  qdHi,
+  qdMul,
+  qdMulNum,
+  qdSub,
+  qdToNumber,
+  qdToString,
+} from './qd';
 
 // ─── Worker pool ──────────────────────────────────────────────────────────────
 
@@ -566,12 +578,27 @@ canvas.addEventListener('mousemove', (e) => {
     view.yMax = qdToString(qdAdd(newYMin, yRange));
   }
 
+  const dpr = window.devicePixelRatio || 1;
+  const [fx, fy] = screenToFractal(e.clientX * dpr, e.clientY * dpr);
+
+  const hoverIterEl = document.getElementById('hover-iter');
+  if (hoverIterEl) {
+    const res = estimateEscapeSample(
+        qdHi(fx),
+        qdHi(fy),
+        view.maxIter,
+        Number(view.juliaRe),
+        Number(view.juliaIm),
+        view.isJulia
+    );
+    hoverIterEl.textContent = `⟳ ${res.inside ? '∞' : res.escapeIter}`;
+  }
+
   // Update Julia constant from mouse position (when in Julia preview mode)
   if (view.isJulia) {
     const juliaPreview = document.getElementById('julia-coords');
     if (juliaPreview) {
-      const [fx, fy] = screenToFractal(e.clientX * devicePixelRatio, e.clientY * devicePixelRatio);
-      juliaPreview.textContent = `c = ${fx[0].toFixed(4)} ${fy[0] >= 0 ? '+' : ''}${fy[0].toFixed(4)}i`;
+      juliaPreview.textContent = `c = ${qdHi(fx).toFixed(4)} ${qdHi(fy) >= 0 ? '+' : ''}${qdHi(fy).toFixed(4)}i`;
     }
   }
 });
@@ -1026,35 +1053,34 @@ function saveScreenshot() {
   link.click();
 }
 
-function estimateEscapeSample(re: number, im: number, maxIter: number): { inside: boolean; escapeIter: number } {
-  let zRe = 0;
-  let zIm = 0;
+function estimateEscapeSample(re: number, im: number, maxIter: number, juliaRe = 0, juliaIm = 0, isJulia = false): {
+  inside: boolean;
+  escapeIter: number
+} {
+  let zRe = isJulia ? re : 0;
+  let zIm = isJulia ? im : 0;
+  const cRe = isJulia ? juliaRe : re;
+  const cIm = isJulia ? juliaIm : im;
 
   for (let iter = 0; iter < maxIter; iter++) {
-    if (zRe * zRe + zIm * zIm > 4) {
+    const x2 = zRe * zRe;
+    const y2 = zIm * zIm;
+    if (x2 + y2 > 4) {
       return { inside: false, escapeIter: iter };
     }
 
     if (view.fractalType === 1) {
       // Burning Ship: z_{n+1} = (|Re(z)| + i|Im(z)|)^2 + c
-      const aRe = Math.abs(zRe);
-      const aIm = Math.abs(zIm);
-      const nextRe = aRe * aRe - aIm * aIm + re;
-      const nextIm = 2 * aRe * aIm + im;
-      zRe = nextRe;
-      zIm = nextIm;
+      zIm = 2 * Math.abs(zRe) * Math.abs(zIm) + cIm;
+      zRe = x2 - y2 + cRe;
     } else if (view.fractalType === 2) {
       // Tricorn: z_{n+1} = conjugate(z)^2 + c
-      const nextRe = zRe * zRe - zIm * zIm + re;
-      const nextIm = -2 * zRe * zIm + im;
-      zRe = nextRe;
-      zIm = nextIm;
+      zIm = -2 * zRe * zIm + cIm;
+      zRe = x2 - y2 + cRe;
     } else {
       // Mandelbrot: z_{n+1} = z^2 + c
-      const nextRe = zRe * zRe - zIm * zIm + re;
-      const nextIm = 2 * zRe * zIm + im;
-      zRe = nextRe;
-      zIm = nextIm;
+      zIm = 2 * zRe * zIm + cIm;
+      zRe = x2 - y2 + cRe;
     }
   }
 
