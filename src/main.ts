@@ -8,11 +8,23 @@ import './style.css';
 import type {Bookmark, PrecisionTier, RecolorTask, RenderResult, RenderTask, ViewState} from './types';
 import {generateRandomPalette, PALETTES, RANDOM_PALETTE_INDEX} from './colorPalettes';
 import {createAudioVisualizer} from './audioVisualizer';
-import {type QD, qdAdd, qdDiv, qdDivNum, qdFromString, qdHi, qdMul, qdMulNum, qdSub, qdToNumber, qdToString,} from './qd';
+import {
+  type QD,
+  qdAdd,
+  qdDiv,
+  qdDivNum,
+  qdFromString,
+  qdHi,
+  qdMul,
+  qdMulNum,
+  qdSub,
+  qdToNumber,
+  qdToString,
+} from './qd';
 
 // ─── Worker pool ──────────────────────────────────────────────────────────────
 
-const NUM_WORKERS = Math.max(2, Math.min(8, navigator.hardwareConcurrency ?? 4));
+const NUM_WORKERS = Math.max(2, Math.min(16, navigator.hardwareConcurrency ?? 4));
 const workers: Worker[] = [];
 let workersReady = 0;
 
@@ -38,7 +50,6 @@ const DEFAULT_VIEW: ViewState = {
   juliaRe: '-0.7269',
   juliaIm: '0.1889',
   zoom: '1',
-  orbitTrapMode: 0,
   shadows: false,
   fractalType: 0,
 };
@@ -238,7 +249,6 @@ function scheduleRender() {
         palette: view.palette,
         colorSpeed: view.colorSpeed,
         colorOffset: view.colorOffset,
-        orbitTrapMode: view.orbitTrapMode,
         shadows: view.shadows,
         fractalType: view.fractalType,
         precisionTier,
@@ -619,12 +629,27 @@ canvas.addEventListener('mousemove', (e) => {
     view.yMax = qdToString(qdAdd(newYMin, yRange));
   }
 
+  const dpr = window.devicePixelRatio || 1;
+  const [fx, fy] = screenToFractal(e.clientX * dpr, e.clientY * dpr);
+
+  const hoverIterEl = document.getElementById('hover-iter');
+  if (hoverIterEl) {
+    const res = estimateEscapeSample(
+        qdHi(fx),
+        qdHi(fy),
+        view.maxIter,
+        Number(view.juliaRe),
+        Number(view.juliaIm),
+        view.isJulia
+    );
+    hoverIterEl.textContent = `⟳ ${res.inside ? '∞' : res.escapeIter}`;
+  }
+
   // Update Julia constant from mouse position (when in Julia preview mode)
   if (view.isJulia) {
     const juliaPreview = document.getElementById('julia-coords');
     if (juliaPreview) {
-      const [fx, fy] = screenToFractal(e.clientX * devicePixelRatio, e.clientY * devicePixelRatio);
-      juliaPreview.textContent = `c = ${fx[0].toFixed(4)} ${fy[0] >= 0 ? '+' : ''}${fy[0].toFixed(4)}i`;
+      juliaPreview.textContent = `c = ${qdHi(fx).toFixed(4)} ${qdHi(fy) >= 0 ? '+' : ''}${qdHi(fy).toFixed(4)}i`;
     }
   }
 });
@@ -1067,26 +1092,6 @@ document.getElementById('mini-mandelbrot-canvas')?.addEventListener('click', (e)
   scheduleRender();
 });
 
-const ORBIT_TRAP_MODES = [
-  {label: 'None', value: 0},
-  {label: 'Celtic', value: 1},
-  {label: 'Spiral', value: 2},
-  {label: 'Square', value: 3},
-];
-
-function updateOrbitTrapUI() {
-  const sel = document.getElementById('orbit-trap-select') as HTMLSelectElement;
-  if (!sel) return;
-
-  sel.innerHTML = ORBIT_TRAP_MODES.map(m => `
-    <option value="${m.value}" ${m.value === view.orbitTrapMode ? 'selected' : ''}>
-      ${m.label}
-    </option>
-  `).join('');
-}
-
-updateOrbitTrapUI();
-
 // ─── Screenshot ───────────────────────────────────────────────────────────────
 
 function saveScreenshot() {
@@ -1096,35 +1101,34 @@ function saveScreenshot() {
   link.click();
 }
 
-function estimateEscapeSample(re: number, im: number, maxIter: number): { inside: boolean; escapeIter: number } {
-  let zRe = 0;
-  let zIm = 0;
+function estimateEscapeSample(re: number, im: number, maxIter: number, juliaRe = 0, juliaIm = 0, isJulia = false): {
+  inside: boolean;
+  escapeIter: number
+} {
+  let zRe = isJulia ? re : 0;
+  let zIm = isJulia ? im : 0;
+  const cRe = isJulia ? juliaRe : re;
+  const cIm = isJulia ? juliaIm : im;
 
   for (let iter = 0; iter < maxIter; iter++) {
-    if (zRe * zRe + zIm * zIm > 4) {
+    const x2 = zRe * zRe;
+    const y2 = zIm * zIm;
+    if (x2 + y2 > 4) {
       return { inside: false, escapeIter: iter };
     }
 
     if (view.fractalType === 1) {
       // Burning Ship: z_{n+1} = (|Re(z)| + i|Im(z)|)^2 + c
-      const aRe = Math.abs(zRe);
-      const aIm = Math.abs(zIm);
-      const nextRe = aRe * aRe - aIm * aIm + re;
-      const nextIm = 2 * aRe * aIm + im;
-      zRe = nextRe;
-      zIm = nextIm;
+      zIm = 2 * Math.abs(zRe) * Math.abs(zIm) + cIm;
+      zRe = x2 - y2 + cRe;
     } else if (view.fractalType === 2) {
       // Tricorn: z_{n+1} = conjugate(z)^2 + c
-      const nextRe = zRe * zRe - zIm * zIm + re;
-      const nextIm = -2 * zRe * zIm + im;
-      zRe = nextRe;
-      zIm = nextIm;
+      zIm = -2 * zRe * zIm + cIm;
+      zRe = x2 - y2 + cRe;
     } else {
       // Mandelbrot: z_{n+1} = z^2 + c
-      const nextRe = zRe * zRe - zIm * zIm + re;
-      const nextIm = 2 * zRe * zIm + im;
-      zRe = nextRe;
-      zIm = nextIm;
+      zIm = 2 * zRe * zIm + cIm;
+      zRe = x2 - y2 + cRe;
     }
   }
 
@@ -1633,7 +1637,6 @@ function initSettingsPanel() {
     });
   }
 
-  // Orbit Trap select (kept for bookmark compatibility — no UI exposed)
 
   // Color speed slider
   const speedSlider = document.getElementById('speed-slider') as HTMLInputElement;
@@ -1745,73 +1748,7 @@ function initToolbar() {
 
 // ─── Bookmarks ────────────────────────────────────────────────────────────────
 
-const BUILT_IN_BOOKMARKS: Bookmark[] = [
-  {
-    label: '🏠 Home',
-    xMin: '-2.5',
-    xMax: '1.0',
-    yMin: '-1.25',
-    yMax: '1.25',
-    maxIter: 256,
-    palette: 3,
-    isJulia: false,
-    juliaRe: '-0.7269',
-    juliaIm: '0.1889',
-    orbitTrapMode: 0
-  },
-  {
-    label: '🦐 Seahorse',
-    xMin: '-0.76',
-    xMax: '-0.72',
-    yMin: '0.17',
-    yMax: '0.21',
-    maxIter: 512,
-    palette: 5,
-    isJulia: false,
-    juliaRe: '-0.7269',
-    juliaIm: '0.1889',
-    orbitTrapMode: 0
-  },
-  {
-    label: '🐘 Elephant',
-    xMin: '0.24',
-    xMax: '0.28',
-    yMin: '-0.01',
-    yMax: '0.02',
-    maxIter: 512,
-    palette: 1,
-    isJulia: false,
-    juliaRe: '-0.7269',
-    juliaIm: '0.1889',
-    orbitTrapMode: 0
-  },
-  {
-    label: '🌀 Spiral',
-    xMin: '-0.748',
-    xMax: '-0.740',
-    yMin: '0.100',
-    yMax: '0.107',
-    maxIter: 1024,
-    palette: 4,
-    isJulia: false,
-    juliaRe: '-0.7269',
-    juliaIm: '0.1889',
-    orbitTrapMode: 0
-  },
-  {
-    label: '⚡ Julia Orbit',
-    xMin: '-1.5',
-    xMax: '1.5',
-    yMin: '-1.0',
-    yMax: '1.0',
-    maxIter: 256,
-    palette: 1,
-    isJulia: true,
-    juliaRe: '-0.7269',
-    juliaIm: '0.1889',
-    orbitTrapMode: 0
-  },
-];
+const BUILT_IN_BOOKMARKS: Bookmark[] = [];
 
 function loadBookmarks(): Bookmark[] {
   try {
@@ -1841,12 +1778,7 @@ function applyBookmark(bm: Bookmark) {
   view.isJulia = bm.isJulia;
   view.juliaRe = bm.juliaRe;
   view.juliaIm = bm.juliaIm;
-  view.orbitTrapMode = bm.orbitTrapMode || 0;
   updateZoom(); updateIterDisplay(); updatePaletteUI();
-
-  const orbitTrapSelect = document.getElementById('orbit-trap-select') as HTMLSelectElement;
-  if (orbitTrapSelect) orbitTrapSelect.value = String(view.orbitTrapMode);
-  
   scheduleRender();
 }
 

@@ -24,7 +24,6 @@ export interface ViewState {
   juliaIm: string;
   /** Current zoom level (derived, for display) */
   zoom: string;
-  orbitTrapMode: number;
   /** 3D shadow/lighting overlay enabled */
   shadows: boolean;
   /** Fractal type: 0=Mandelbrot, 1=Burning Ship, 2=Tricorn */
@@ -60,7 +59,6 @@ export interface RenderTask {
   colorSpeed: number;
   /** Color offset for animation */
   colorOffset: number;
-  orbitTrapMode: number;
   /** 3D shadow/lighting overlay enabled */
   shadows: boolean;
   /** Fractal type: 0=Mandelbrot, 1=Burning Ship, 2=Tricorn */
@@ -152,7 +150,6 @@ export interface Bookmark {
   isJulia: boolean;
   juliaRe: string;
   juliaIm: string;
-  orbitTrapMode: number;
 }
 
 /** Precision tiers for rendering paths */

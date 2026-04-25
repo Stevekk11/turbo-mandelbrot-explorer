@@ -46,6 +46,19 @@ html, body {
   padding: 0.5rem 1rem;
   background: linear-gradient(to bottom, rgba(10,10,20,0.92) 0%, transparent 100%);
   backdrop-filter: blur(4px);
+  pointer-events: none;
+}
+
+#top-bar > * {
+  pointer-events: auto;
+}
+
+#hover-iter-container {
+  position: fixed;
+  top: 45px;
+  left: 10px;
+  z-index: 20;
+  pointer-events: none;
 }
 
 #mini-mandelbrot-container {
