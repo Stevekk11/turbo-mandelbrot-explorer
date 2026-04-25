@@ -52,6 +52,7 @@ let totalTiles = 0;
 let isRendering = false;
 let colorAnimRaf = 0;
 let colorAnimActive = false;
+let orbitModeActive = false;
 
 const audioVisualizer = createAudioVisualizer();
 const AUDIO_RECOLOR_INTERVAL_MS = 33;
@@ -128,6 +129,7 @@ function animateTiles() {
     if (offscreen) {
       ctx.drawImage(offscreen, 0, 0);
       drawPath();
+      drawOrbit();
       drawMeasurements();
     }
   } else {
@@ -408,7 +410,7 @@ function computeOrbitPointsAtClientPoint(clientX: number, clientY: number): { re
 }
 
 function showOrbitAtClientPoint(clientX: number, clientY: number) {
-  if (pathDrawingMode || measureMode) return;
+  if (!orbitModeActive || pathDrawingMode || measureMode) return;
   orbitPoints = computeOrbitPointsAtClientPoint(clientX, clientY);
   redrawOverlays();
 }
@@ -649,7 +651,7 @@ canvas.addEventListener('mouseup', (e) => {
     return;
   }
 
-  if (!pathDrawingMode && moved < 5) {
+  if (orbitModeActive && !pathDrawingMode && moved < 5) {
     isDragging = false;
     panSource = null;
     canvas.style.cursor = 'crosshair';
@@ -803,7 +805,7 @@ canvas.addEventListener('touchend', (e) => {
       return;
     }
 
-    if (!pathDrawingMode && moved < 5) {
+    if (orbitModeActive && !pathDrawingMode && moved < 5) {
       isDragging = false;
       panSource = null;
       showOrbitAtClientPoint(touch.clientX, touch.clientY);
@@ -1455,6 +1457,16 @@ function toggleMeasureMode() {
   }
 }
 
+function toggleOrbitMode() {
+  orbitModeActive = !orbitModeActive;
+  const btn = document.getElementById('orbit-btn');
+  if (btn) btn.classList.toggle('btn-active', orbitModeActive);
+  if (!orbitModeActive) {
+    orbitPoints = null;
+    redrawOverlays();
+  }
+}
+
 function toggleShadows() {
   view.shadows = !view.shadows;
   const btn = document.getElementById('shadows-btn');
@@ -1716,6 +1728,7 @@ function initSettingsPanel() {
 // ─── Toolbar button wiring ────────────────────────────────────────────────────
 
 function initToolbar() {
+  document.getElementById('orbit-btn')?.addEventListener('click', toggleOrbitMode);
   document.getElementById('reset-btn')?.addEventListener('click', resetView);
   document.getElementById('julia-btn')?.addEventListener('click', toggleJulia);
   document.getElementById('screenshot-btn')?.addEventListener('click', saveScreenshot);
