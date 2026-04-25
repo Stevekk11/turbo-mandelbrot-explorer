@@ -319,6 +319,7 @@ function handleWorkerMessage(e: MessageEvent) {
         // Blit offscreen to visible canvas immediately
         ctx.drawImage(offscreen, 0, 0);
         drawPath();
+        drawOrbit();
         drawMeasurements();
       }
     }
@@ -359,6 +360,56 @@ function placePathAtClientPoint(clientX: number, clientY: number) {
   const end = { re: -0.5, im: 0 };
 
   pathPoints = buildEscapeGuidedPath(start, end);
+  redrawOverlays();
+}
+
+function computeOrbitPointsAtClientPoint(clientX: number, clientY: number): { re: number, im: number }[] {
+  const dpr = window.devicePixelRatio || 1;
+  const [fx, fy] = screenToFractal(clientX * dpr, clientY * dpr);
+  const seed = { re: fx[0], im: fy[0] };
+  const orbit: { re: number, im: number }[] = [];
+  const maxIter = Math.max(32, Math.min(4000, view.maxIter));
+
+  const juliaRe = Number.parseFloat(view.juliaRe) || 0;
+  const juliaIm = Number.parseFloat(view.juliaIm) || 0;
+  let zRe = view.isJulia ? seed.re : 0;
+  let zIm = view.isJulia ? seed.im : 0;
+  const cRe = view.isJulia ? juliaRe : seed.re;
+  const cIm = view.isJulia ? juliaIm : seed.im;
+
+  orbit.push({ re: zRe, im: zIm });
+
+  for (let iter = 0; iter < maxIter; iter++) {
+    if (zRe * zRe + zIm * zIm > 4) break;
+
+    if (view.fractalType === 1) {
+      const aRe = Math.abs(zRe);
+      const aIm = Math.abs(zIm);
+      const nextRe = aRe * aRe - aIm * aIm + cRe;
+      const nextIm = 2 * aRe * aIm + cIm;
+      zRe = nextRe;
+      zIm = nextIm;
+    } else if (view.fractalType === 2) {
+      const nextRe = zRe * zRe - zIm * zIm + cRe;
+      const nextIm = -2 * zRe * zIm + cIm;
+      zRe = nextRe;
+      zIm = nextIm;
+    } else {
+      const nextRe = zRe * zRe - zIm * zIm + cRe;
+      const nextIm = 2 * zRe * zIm + cIm;
+      zRe = nextRe;
+      zIm = nextIm;
+    }
+
+    orbit.push({ re: zRe, im: zIm });
+  }
+
+  return orbit;
+}
+
+function showOrbitAtClientPoint(clientX: number, clientY: number) {
+  if (pathDrawingMode || measureMode) return;
+  orbitPoints = computeOrbitPointsAtClientPoint(clientX, clientY);
   redrawOverlays();
 }
 
@@ -597,6 +648,15 @@ canvas.addEventListener('mouseup', (e) => {
     redrawOverlays();
     return;
   }
+
+  if (!pathDrawingMode && moved < 5) {
+    isDragging = false;
+    panSource = null;
+    canvas.style.cursor = 'crosshair';
+    showOrbitAtClientPoint(e.clientX, e.clientY);
+    return;
+  }
+
   endDrag();
 });
 canvas.addEventListener('mouseleave', endDrag);
@@ -743,6 +803,13 @@ canvas.addEventListener('touchend', (e) => {
       return;
     }
 
+    if (!pathDrawingMode && moved < 5) {
+      isDragging = false;
+      panSource = null;
+      showOrbitAtClientPoint(touch.clientX, touch.clientY);
+      return;
+    }
+
     if (pathDrawingMode && moved < 5) {
       const now = performance.now();
       const isDoubleTap =
@@ -880,6 +947,7 @@ function updateSpeedUI() {
 
 function toggleJulia() {
   view.isJulia = !view.isJulia;
+  orbitPoints = null;
   const btn = document.getElementById('julia-btn');
   if (btn) {
     btn.textContent = view.isJulia ? '🌀 M' : '🌀 J';
@@ -893,7 +961,7 @@ function toggleJulia() {
     miniContainer.style.display = view.isJulia ? 'block' : 'none';
     if (view.isJulia) renderMiniMandelbrot();
   }
-  
+
   scheduleRender();
 }
 
@@ -1214,6 +1282,7 @@ function buildEscapeGuidedPath(start: { re: number, im: number }, end: { re: num
 }
 
 let pathPoints: { re: number, im: number }[] | null = null;
+let orbitPoints: { re: number, im: number }[] | null = null;
 
 function drawPath() {
   if (!pathPoints || view.isJulia) return;
@@ -1247,6 +1316,31 @@ function drawPath() {
 
 // ─── Measurement mode ─────────────────────────────────────────────────────────
 
+
+function drawOrbit() {
+  if (!orbitPoints) return;
+
+  const screenOrbit = orbitPoints.map(p => fractalToScreenPoint(p.re, p.im));
+  if (screenOrbit.length === 0) return;
+
+  ctx.save();
+  ctx.strokeStyle = '#ff2e2e';
+  ctx.fillStyle = '#ff2e2e';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(screenOrbit[0].x, screenOrbit[0].y);
+  for (let i = 1; i < screenOrbit.length; i++) {
+    ctx.lineTo(screenOrbit[i].x, screenOrbit[i].y);
+  }
+  ctx.stroke();
+
+  for (const pt of screenOrbit) {
+    ctx.beginPath();
+    ctx.arc(pt.x, pt.y, 4, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
 /**
  * Format a fractal-coordinate distance using SI prefixes so the label remains
  * readable at any zoom level (from km at low zoom down to qm at QD precision).
@@ -1346,6 +1440,7 @@ function redrawOverlays() {
   if (offscreen) {
     ctx.drawImage(offscreen, 0, 0);
     drawPath();
+    drawOrbit();
     drawMeasurements();
   }
 }
@@ -1521,6 +1616,7 @@ function initSettingsPanel() {
     fractalTypeSelect.value = String(view.fractalType);
     fractalTypeSelect.addEventListener('change', () => {
       view.fractalType = parseInt(fractalTypeSelect.value);
+      orbitPoints = null;
       scheduleRender();
     });
   }
@@ -1588,11 +1684,17 @@ function initSettingsPanel() {
 
   juliaReInput.addEventListener('input', () => {
     view.juliaRe = String(parseFloat(juliaReInput.value) || 0);
-    if (view.isJulia) scheduleRender();
+    if (view.isJulia) {
+      orbitPoints = null;
+      scheduleRender();
+    }
   });
   juliaImInput.addEventListener('input', () => {
     view.juliaIm = String(parseFloat(juliaImInput.value) || 0);
-    if (view.isJulia) scheduleRender();
+    if (view.isJulia) {
+      orbitPoints = null;
+      scheduleRender();
+    }
   });
 
   // Julia preset buttons
@@ -1604,6 +1706,7 @@ function initSettingsPanel() {
       view.juliaIm = String(im);
       juliaReInput.value = String(re);
       juliaImInput.value = String(im);
+      orbitPoints = null;
       if (!view.isJulia) toggleJulia();
       else scheduleRender();
     });
