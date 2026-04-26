@@ -141,9 +141,7 @@ function animateTiles() {
   if (receivedAll && allDone) {
     if (offscreen) {
       ctx.drawImage(offscreen, 0, 0);
-      drawPath();
-      drawOrbit();
-      drawMeasurements();
+      drawAllOverlays();
     }
   } else {
     fadeRaf = requestAnimationFrame(animateTiles);
@@ -333,9 +331,7 @@ function handleWorkerMessage(e: MessageEvent) {
       } else {
         // Blit offscreen to visible canvas immediately
         ctx.drawImage(offscreen, 0, 0);
-        drawPath();
-        drawOrbit();
-        drawMeasurements();
+        drawAllOverlays();
       }
     }
 
@@ -638,6 +634,8 @@ canvas.addEventListener('mousemove', (e) => {
     view.xMax = qdToString(qdAdd(newXMin, xRange));
     view.yMin = qdToString(newYMin);
     view.yMax = qdToString(qdAdd(newYMin, yRange));
+
+    drawAxisGrid();
   }
 
   const dpr = window.devicePixelRatio || 1;
@@ -726,6 +724,7 @@ canvas.addEventListener('wheel', (e) => {
     ctx.translate(-zoomX, -zoomY);
     ctx.drawImage(temp, 0, 0);
     ctx.restore();
+    drawAxisGrid();
   }
 
   // Debounce the actual re-render so rapid scroll events don't each start a render
@@ -791,6 +790,8 @@ canvas.addEventListener('touchmove', (e) => {
     view.xMax = qdToString(qdAdd(newXMin, xRange));
     view.yMin = qdToString(newYMin);
     view.yMax = qdToString(qdAdd(newYMin, yRange));
+
+    drawAxisGrid();
   } else if (e.touches.length === 2) {
     const dist = Math.hypot(
       e.touches[1].clientX - e.touches[0].clientX,
@@ -815,6 +816,7 @@ canvas.addEventListener('touchmove', (e) => {
     ctx.translate(-zoomX, -zoomY);
     ctx.drawImage(temp, 0, 0);
     ctx.restore();
+    drawAxisGrid();
 
     if (wheelTimer !== null) clearTimeout(wheelTimer);
     wheelTimer = setTimeout(() => { wheelTimer = null; scheduleRender(); }, 120);
@@ -1564,6 +1566,7 @@ function drawAxisGrid() {
   const gridStepY = niceTickStep(yRange, Math.max(4, Math.round(h / 130)));
   const labelFontSize = Math.max(10, Math.min(13, Math.round(w / 120)));
   const labelPad = 4;
+  const xLabelBottomMargin = Math.max(48, Math.round(h * 0.1));
 
   const toScreenX = (x: number) => (x - xMin) * xScale;
   const toScreenY = (y: number) => (y - yMin) * yScale;
@@ -1581,7 +1584,7 @@ function drawAxisGrid() {
     if (sx < -1 || sx > w + 1) continue;
 
     ctx.strokeStyle = Math.abs(x) < gridStepX * 0.5 ? 'rgba(255,255,255,0.50)' : 'rgba(148,163,184,0.18)';
-    ctx.lineWidth = Math.abs(x) < gridStepX * 0.5 ? 1.6 : 1;
+    ctx.lineWidth = Math.abs(x) < gridStepX * 0.5 ? 2.1 : 1.4;
     ctx.beginPath();
     ctx.moveTo(sx, 0);
     ctx.lineTo(sx, h);
@@ -1589,7 +1592,7 @@ function drawAxisGrid() {
 
     const label = formatAxisLabel(x, gridStepX);
     if (label) {
-      const ly = Math.min(h - labelFontSize - 2, h - 8);
+      const ly = Math.max(labelFontSize + 8, h - xLabelBottomMargin);
       ctx.fillStyle = 'rgba(15, 23, 42, 0.78)';
       const metrics = ctx.measureText(label);
       ctx.fillRect(sx - metrics.width / 2 - labelPad, ly - labelFontSize / 2 - labelPad, metrics.width + labelPad * 2, labelFontSize + labelPad * 2);
@@ -1606,7 +1609,7 @@ function drawAxisGrid() {
     if (sy < -1 || sy > h + 1) continue;
 
     ctx.strokeStyle = Math.abs(y) < gridStepY * 0.5 ? 'rgba(255,255,255,0.50)' : 'rgba(148,163,184,0.18)';
-    ctx.lineWidth = Math.abs(y) < gridStepY * 0.5 ? 1.6 : 1;
+    ctx.lineWidth = Math.abs(y) < gridStepY * 0.5 ? 2.1 : 1.4;
     ctx.beginPath();
     ctx.moveTo(0, sy);
     ctx.lineTo(w, sy);
@@ -1628,7 +1631,7 @@ function drawAxisGrid() {
   const zeroY = toScreenY(0);
   if (zeroX >= 0 && zeroX <= w) {
     ctx.strokeStyle = 'rgba(255,255,255,0.75)';
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 2.8;
     ctx.beginPath();
     ctx.moveTo(zeroX, 0);
     ctx.lineTo(zeroX, h);
@@ -1636,7 +1639,7 @@ function drawAxisGrid() {
   }
   if (zeroY >= 0 && zeroY <= h) {
     ctx.strokeStyle = 'rgba(255,255,255,0.75)';
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 2.8;
     ctx.beginPath();
     ctx.moveTo(0, zeroY);
     ctx.lineTo(w, zeroY);
@@ -1644,6 +1647,13 @@ function drawAxisGrid() {
   }
 
   ctx.restore();
+}
+
+function drawAllOverlays() {
+  drawAxisGrid();
+  drawPath();
+  drawOrbit();
+  drawMeasurements();
 }
 /**
  * Format a fractal-coordinate distance using SI prefixes so the label remains
@@ -1743,10 +1753,7 @@ function drawMeasurements() {
 function redrawOverlays() {
   if (offscreen) {
     ctx.drawImage(offscreen, 0, 0);
-    drawAxisGrid();
-    drawPath();
-    drawOrbit();
-    drawMeasurements();
+    drawAllOverlays();
   }
 }
 
