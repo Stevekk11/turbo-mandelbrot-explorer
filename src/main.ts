@@ -374,6 +374,60 @@ function placePathAtClientPoint(clientX: number, clientY: number) {
   redrawOverlays();
 }
 
+function computeComplexPower(re: number, im: number, power: number): [number, number] {
+  if (power === 2) {
+    return [re * re - im * im, 2.0 * re * im];
+  }
+  if (power === 3) {
+    const re2 = re * re;
+    const im2 = im * im;
+    return [re * (re2 - 3.0 * im2), im * (3.0 * re2 - im2)];
+  }
+  if (power === 4) {
+    const re2 = re * re;
+    const im2 = im * im;
+    const a = re2 - im2;
+    const b = 2.0 * re * im;
+    return [a * a - b * b, 2.0 * a * b];
+  }
+  if (power === -2) {
+    const re2 = re * re;
+    const im2 = im * im;
+    const r2 = re2 + im2;
+    if (r2 === 0.0) return [Infinity, Infinity];
+    const invR4 = 1.0 / (r2 * r2);
+    return [(re2 - im2) * invR4, (-2.0 * re * im) * invR4];
+  }
+  if (power === -3) {
+    const re2 = re * re;
+    const im2 = im * im;
+    const r2 = re2 + im2;
+    if (r2 === 0.0) return [Infinity, Infinity];
+    const invR6 = 1.0 / (r2 * r2 * r2);
+    const pRe = re * (re2 - 3.0 * im2);
+    const pIm = im * (3.0 * re2 - im2);
+    return [pRe * invR6, -pIm * invR6];
+  }
+  if (power === -4) {
+    const re2 = re * re;
+    const im2 = im * im;
+    const r2 = re2 + im2;
+    if (r2 === 0.0) return [Infinity, Infinity];
+    const a = re2 - im2;
+    const b = 2.0 * re * im;
+    const invR8 = 1.0 / (r2 * r2 * r2 * r2);
+    return [(a * a - b * b) * invR8, (-2.0 * a * b) * invR8];
+  }
+
+  const radiusSq = re * re + im * im;
+  if (radiusSq === 0.0) {
+    return power < 0.0 ? [Infinity, Infinity] : [0.0, 0.0];
+  }
+  const radiusPow = Math.pow(Math.sqrt(radiusSq), power);
+  const angle = Math.atan2(im, re) * power;
+  return [radiusPow * Math.cos(angle), radiusPow * Math.sin(angle)];
+}
+
 function computeOrbitPointsAtClientPoint(clientX: number, clientY: number): { re: number, im: number }[] {
   const dpr = window.devicePixelRatio || 1;
   const [fx, fy] = screenToFractal(clientX * dpr, clientY * dpr);
@@ -383,9 +437,10 @@ function computeOrbitPointsAtClientPoint(clientX: number, clientY: number): { re
 
   const juliaRe = Number.parseFloat(view.juliaRe) || 0;
   const juliaIm = Number.parseFloat(view.juliaIm) || 0;
-  const power = Number.isFinite(view.multibrotPower) ? Math.max(0.1, view.multibrotPower) : 2.0;
-  let zRe = view.isJulia ? seed.re : 0;
-  let zIm = view.isJulia ? seed.im : 0;
+  const power = Number.isFinite(view.multibrotPower) ? view.multibrotPower : 2.0;
+  const negativeMultibrotMandelbrot = view.fractalType === 0 && power < 0 && !view.isJulia;
+  let zRe = view.isJulia || negativeMultibrotMandelbrot ? seed.re : 0;
+  let zIm = view.isJulia || negativeMultibrotMandelbrot ? seed.im : 0;
   const cRe = view.isJulia ? juliaRe : seed.re;
   const cIm = view.isJulia ? juliaIm : seed.im;
 
@@ -407,15 +462,7 @@ function computeOrbitPointsAtClientPoint(clientX: number, clientY: number): { re
       zRe = nextRe;
       zIm = nextIm;
     } else {
-      const radiusSq = zRe * zRe + zIm * zIm;
-      let powRe = 0;
-      let powIm = 0;
-      if (radiusSq > 0) {
-        const radiusPow = Math.pow(Math.sqrt(radiusSq), power);
-        const angle = Math.atan2(zIm, zRe) * power;
-        powRe = radiusPow * Math.cos(angle);
-        powIm = radiusPow * Math.sin(angle);
-      }
+      const [powRe, powIm] = computeComplexPower(zRe, zIm, power);
       zRe = powRe + cRe;
       zIm = powIm + cIm;
     }
@@ -1129,7 +1176,7 @@ function renderMiniMandelbrot() {
   const img = ctx.createImageData(w, h);
   const data = img.data;
 
-  const power = Number.isFinite(view.multibrotPower) ? Math.max(0.1, view.multibrotPower) : 2.0;
+  const power = Number.isFinite(view.multibrotPower) ? view.multibrotPower : 2.0;
   const xRange = miniViewport.xMax - miniViewport.xMin;
   const yRange = miniViewport.yMax - miniViewport.yMin;
 
@@ -1137,19 +1184,13 @@ function renderMiniMandelbrot() {
     for (let x = 0; x < w; x++) {
       let re = miniViewport.xMin + (x / w) * xRange;
       let im = miniViewport.yMin + (y / h) * yRange;
-      let zRe = 0, zIm = 0;
+      const negativeMultibrotMandelbrot = power < 0;
+      let zRe = negativeMultibrotMandelbrot ? re : 0;
+      let zIm = negativeMultibrotMandelbrot ? im : 0;
       let iter = 0;
       const maxIter = 64;
       while (zRe * zRe + zIm * zIm <= 4 && iter < maxIter) {
-        const radiusSq = zRe * zRe + zIm * zIm;
-        let powRe = 0;
-        let powIm = 0;
-        if (radiusSq > 0) {
-          const radiusPow = Math.pow(Math.sqrt(radiusSq), power);
-          const angle = Math.atan2(zIm, zRe) * power;
-          powRe = radiusPow * Math.cos(angle);
-          powIm = radiusPow * Math.sin(angle);
-        }
+        const [powRe, powIm] = computeComplexPower(zRe, zIm, power);
         zRe = powRe + re;
         zIm = powIm + im;
         iter++;
@@ -1264,7 +1305,12 @@ function estimateEscapeSample(
   let zIm = isJulia ? im : 0;
   const cRe = isJulia ? juliaRe : re;
   const cIm = isJulia ? juliaIm : im;
-  const power = Number.isFinite(multibrotPower) ? Math.max(0.1, multibrotPower) : 2.0;
+  const power = Number.isFinite(multibrotPower) ? multibrotPower : 2.0;
+  const negativeMultibrotMandelbrot = view.fractalType === 0 && power < 0 && !isJulia;
+  if (negativeMultibrotMandelbrot) {
+    zRe = re;
+    zIm = im;
+  }
 
   for (let iter = 0; iter < maxIter; iter++) {
     const x2 = zRe * zRe;
@@ -1283,14 +1329,7 @@ function estimateEscapeSample(
       zRe = x2 - y2 + cRe;
     } else {
       // Multibrot: z_{n+1} = z^d + c
-      let powRe = 0;
-      let powIm = 0;
-      if (x2 + y2 > 0) {
-        const radiusPow = Math.pow(Math.sqrt(x2 + y2), power);
-        const angle = Math.atan2(zIm, zRe) * power;
-        powRe = radiusPow * Math.cos(angle);
-        powIm = radiusPow * Math.sin(angle);
-      }
+      const [powRe, powIm] = computeComplexPower(zRe, zIm, power);
       zRe = powRe + cRe;
       zIm = powIm + cIm;
     }

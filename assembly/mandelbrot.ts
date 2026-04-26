@@ -47,9 +47,16 @@ export function computeTile(
   const dx: f64 = (xMax - xMin) / <f64>width;
   const dy: f64 = (yMax - yMin) / <f64>height;
   const isJ: bool = isJulia != 0;
-  const multibrotMode: i32 = multibrotPower == 2.0 ? 2 : multibrotPower == 3.0 ? 3 : multibrotPower == 4.0 ? 4 : 0;
-  const smoothBase: f64 = fractalType == 0 && multibrotPower > 1.000001 ? multibrotPower : 2.0;
+  const multibrotMode: i32 =
+    multibrotPower == 2.0 ? 2 :
+      multibrotPower == 3.0 ? 3 :
+        multibrotPower == 4.0 ? 4 :
+          multibrotPower == -2.0 ? -2 :
+            multibrotPower == -3.0 ? -3 :
+              multibrotPower == -4.0 ? -4 : 0;
+  const smoothBase: f64 = fractalType == 0 && Math.abs(multibrotPower) > 1.000001 ? Math.abs(multibrotPower) : 2.0;
   const logBase: f64 = Math.log(smoothBase);
+  const negativeMultibrotMandelbrot: bool = fractalType == 0 && multibrotPower < 0.0 && !isJ;
 
   for (let py: i32 = 0; py < height; py++) {
     const im: f64 = yMin + <f64>py * dy;
@@ -58,8 +65,8 @@ export function computeTile(
     for (let px: i32 = 0; px < width; px++) {
       const re: f64 = xMin + <f64>px * dx;
 
-      let zRe: f64 = isJ ? re : 0.0;
-      let zIm: f64 = isJ ? im : 0.0;
+      let zRe: f64 = isJ || negativeMultibrotMandelbrot ? re : 0.0;
+      let zIm: f64 = isJ || negativeMultibrotMandelbrot ? im : 0.0;
       const cRe: f64 = isJ ? juliaRe : re;
       const cIm: f64 = isJ ? juliaIm : im;
 
@@ -98,11 +105,58 @@ export function computeTile(
               zIm = 2.0 * a * b + cIm;
               break;
             }
+            case -2: {
+              const radiusSq: f64 = x2 + y2;
+              if (radiusSq == 0.0) {
+                zRe = 1.0 / 0.0;
+                zIm = 1.0 / 0.0;
+              } else {
+                const invR4: f64 = 1.0 / (radiusSq * radiusSq);
+                const xy: f64 = zRe * zIm;
+                zRe = (x2 - y2) * invR4 + cRe;
+                zIm = (-2.0 * xy) * invR4 + cIm;
+              }
+              break;
+            }
+            case -3: {
+              const radiusSq: f64 = x2 + y2;
+              if (radiusSq == 0.0) {
+                zRe = 1.0 / 0.0;
+                zIm = 1.0 / 0.0;
+              } else {
+                const invR6: f64 = 1.0 / (radiusSq * radiusSq * radiusSq);
+                const nextRe: f64 = zRe * (x2 - 3.0 * y2);
+                const nextIm: f64 = zIm * (3.0 * x2 - y2);
+                zRe = nextRe * invR6 + cRe;
+                zIm = -nextIm * invR6 + cIm;
+              }
+              break;
+            }
+            case -4: {
+              const radiusSq: f64 = x2 + y2;
+              if (radiusSq == 0.0) {
+                zRe = 1.0 / 0.0;
+                zIm = 1.0 / 0.0;
+              } else {
+                const xy: f64 = zRe * zIm;
+                const a: f64 = x2 - y2;
+                const b: f64 = 2.0 * xy;
+                const invR8: f64 = 1.0 / (radiusSq * radiusSq * radiusSq * radiusSq);
+                zRe = (a * a - b * b) * invR8 + cRe;
+                zIm = (-2.0 * a * b) * invR8 + cIm;
+              }
+              break;
+            }
             default: {
               const radiusSq: f64 = x2 + y2;
               if (radiusSq == 0.0) {
-                zRe = cRe;
-                zIm = cIm;
+                if (multibrotPower < 0.0) {
+                  zRe = 1.0 / 0.0;
+                  zIm = 1.0 / 0.0;
+                } else {
+                  zRe = cRe;
+                  zIm = cIm;
+                }
               } else {
                 const radiusPow: f64 = Math.pow(Math.sqrt(radiusSq), multibrotPower);
                 const angle: f64 = Math.atan2(zIm, zRe) * multibrotPower;
@@ -123,9 +177,14 @@ export function computeTile(
         val = -1.0;
       } else {
         // Smooth iteration count with large escape radius
-        const log_zn: f64 = Math.log(x2 + y2) * 0.5;
-        const nu: f64 = Math.log(log_zn / logBase) / logBase;
-        val = <f32>(<f64>iter + 1.0 - nu);
+        const r2: f64 = x2 + y2;
+        if (r2 > 1e300) {
+          val = <f32>iter;
+        } else {
+          const log_zn: f64 = Math.log(r2) * 0.5;
+          const nu: f64 = Math.log(log_zn / logBase) / logBase;
+          val = <f32>(isFinite(nu) ? (<f64>iter + 1.0 - nu) : <f64>iter);
+        }
       }
 
       unchecked(_buf[rowBase + px] = val);

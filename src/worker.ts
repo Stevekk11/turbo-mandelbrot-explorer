@@ -70,9 +70,37 @@ function computeComplexPower(re: number, im: number, power: number): [number, nu
     const b = 2.0 * re * im;
     return [a * a - b * b, 2.0 * a * b];
   }
+  if (power === -2) {
+    const re2 = re * re;
+    const im2 = im * im;
+    const r2 = re2 + im2;
+    if (r2 === 0.0) return [Infinity, Infinity];
+    const invR4 = 1.0 / (r2 * r2);
+    return [(re2 - im2) * invR4, (-2.0 * re * im) * invR4];
+  }
+  if (power === -3) {
+    const re2 = re * re;
+    const im2 = im * im;
+    const r2 = re2 + im2;
+    if (r2 === 0.0) return [Infinity, Infinity];
+    const invR6 = 1.0 / (r2 * r2 * r2);
+    const pRe = re * (re2 - 3.0 * im2);
+    const pIm = im * (3.0 * re2 - im2);
+    return [pRe * invR6, -pIm * invR6];
+  }
+  if (power === -4) {
+    const re2 = re * re;
+    const im2 = im * im;
+    const r2 = re2 + im2;
+    if (r2 === 0.0) return [Infinity, Infinity];
+    const a = re2 - im2;
+    const b = 2.0 * re * im;
+    const invR8 = 1.0 / (r2 * r2 * r2 * r2);
+    return [(a * a - b * b) * invR8, (-2.0 * a * b) * invR8];
+  }
   const radiusSq = re * re + im * im;
   if (radiusSq === 0.0) {
-    return [0.0, 0.0];
+    return power < 0.0 ? [Infinity, Infinity] : [0.0, 0.0];
   }
   const radiusPow = Math.pow(Math.sqrt(radiusSq), power);
   const angle = Math.atan2(im, re) * power;
@@ -87,16 +115,17 @@ function computeTileJS(
 ): void {
   const dx = (xMax - xMin) / width;
   const dy = (yMax - yMin) / height;
-  const smoothBase = fractalType === 0 && multibrotPower > 1.000001 ? multibrotPower : 2.0;
+  const smoothBase = fractalType === 0 && Math.abs(multibrotPower) > 1.000001 ? Math.abs(multibrotPower) : 2.0;
   const logBase = Math.log(smoothBase);
+  const negativeMultibrotMandelbrot = fractalType === 0 && multibrotPower < 0.0 && !isJulia;
 
   for (let py = 0; py < height; py++) {
     const im = yMin + py * dy;
     for (let px = 0; px < width; px++) {
       const re = xMin + px * dx;
 
-      let zRe = isJulia ? re : 0.0;
-      let zIm = isJulia ? im : 0.0;
+      let zRe = isJulia || negativeMultibrotMandelbrot ? re : 0.0;
+      let zIm = isJulia || negativeMultibrotMandelbrot ? im : 0.0;
       const cRe = isJulia ? juliaRe : re;
       const cIm = isJulia ? juliaIm : im;
 
@@ -125,9 +154,15 @@ function computeTileJS(
       if (iter >= maxIter) {
         val = -1.0;
       } else {
-        const logZn = Math.log(x2 + y2) * 0.5;
-        const nu = Math.log(logZn / logBase) / logBase;
-        val = iter + 1.0 - nu;
+        const r2 = x2 + y2;
+        if (!Number.isFinite(r2) || r2 > 1e300) {
+          // Infinite escape (common near poles for d < 0): keep it as exterior.
+          val = iter;
+        } else {
+          const logZn = Math.log(r2) * 0.5;
+          const nu = Math.log(logZn / logBase) / logBase;
+          val = Number.isFinite(nu) ? (iter + 1.0 - nu) : iter;
+        }
       }
 
       buf[py * width + px] = val;
@@ -470,7 +505,7 @@ function renderTile(task: RenderTask): ArrayBuffer {
     juliaRe, juliaIm, isJulia, palette, colorSpeed, colorOffset, shadows
   } = task;
   const fractalType = task.fractalType ?? 0;
-  const multibrotPower = Number.isFinite(task.multibrotPower) ? Math.max(0.1, task.multibrotPower) : 2.0;
+  const multibrotPower = Number.isFinite(task.multibrotPower) ? task.multibrotPower : 2.0;
   const size = tileW * tileH;
 
   const xMinHi = qdHi(qdFromString(xMin));
