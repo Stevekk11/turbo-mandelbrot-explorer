@@ -33,6 +33,7 @@ export function createInteractions(options: {
     toggleShadows: () => void;
     togglePathModeUI: (active: boolean) => void;
     toggleColorAnim: () => void;
+  randomPalette: () => void;
 }) {
     let isDragging = false;
     let dragStartX = 0;
@@ -356,6 +357,9 @@ export function createInteractions(options: {
                     break;
                 case 'c':
                     options.toggleColorAnim();
+                  break;
+              case 'n':
+                options.randomPalette();
                     break;
                 case 'arrowleft':
                     options.zoomAt(cx * 0.6, cy, 1);

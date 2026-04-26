@@ -33,7 +33,7 @@ function buildPalette(stops: Stop[]): Uint8ClampedArray {
     // Cosine easing for ultra-smooth gradient
     const smooth = (1 - Math.cos(segT * Math.PI)) / 2;
 
-    data[i * 4 + 0] = Math.round(lerp(s0[1], s1[1], smooth));
+    data[i * 4] = Math.round(lerp(s0[1], s1[1], smooth));
     data[i * 4 + 1] = Math.round(lerp(s0[2], s1[2], smooth));
     data[i * 4 + 2] = Math.round(lerp(s0[3], s1[3], smooth));
     data[i * 4 + 3] = 255;
@@ -112,7 +112,7 @@ function buildMonochrome(): Uint8ClampedArray {
     const t = i / PALETTE_SIZE;
     // Two complete sine cycles with slight bias toward lighter tones
     const v = Math.round(128 + 127 * Math.sin(t * Math.PI * 4 - Math.PI / 2));
-    data[i * 4 + 0] = v;
+    data[i * 4] = v;
     data[i * 4 + 1] = v;
     data[i * 4 + 2] = v;
     data[i * 4 + 3] = 255;
@@ -184,35 +184,6 @@ export function generateRandomPalette(): Uint8ClampedArray {
   stops.push([1.0, 0, 0, 0]);
 
   return buildPalette(stops);
-}
-
-/**
- * Map a smooth iteration value to an RGBA color.
- * `val` is the smooth iteration count (float), or -1 for interior (→ black).
- */
-export function samplePalette(
-  palette: PaletteDef,
-  val: number,
-  _maxIter: number,
-  colorSpeed: number,
-  colorOffset: number
-): [number, number, number] {
-  if (val < 0) return [0, 0, 0]; // interior → black
-
-  // Map to palette index with speed and offset
-  const t = ((val * colorSpeed * 0.01 + colorOffset) % 1 + 1) % 1;
-  const fIdx = t * PALETTE_SIZE;
-  const idx0 = Math.floor(fIdx) % PALETTE_SIZE;
-  const idx1 = (idx0 + 1) % PALETTE_SIZE;
-  const frac = fIdx - idx0;
-  const d = palette.data;
-  const b0 = idx0 * 4;
-  const b1 = idx1 * 4;
-  return [
-    (d[b0]     + (d[b1]     - d[b0])     * frac) | 0,
-    (d[b0 + 1] + (d[b1 + 1] - d[b0 + 1]) * frac) | 0,
-    (d[b0 + 2] + (d[b1 + 2] - d[b0 + 2]) * frac) | 0,
-  ];
 }
 
 /** Version used inside Web Workers (avoids importing PALETTES objects) */

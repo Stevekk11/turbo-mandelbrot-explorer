@@ -151,6 +151,7 @@ interactions = createInteractions({
     document.getElementById('path-mode-btn')?.classList.toggle('btn-active', active);
   },
   toggleColorAnim: audioControls.toggleColorAnim,
+  randomPalette: () => ui.randomizePalette(renderer.broadcastPaletteUpdate, () => renderer.tileCount() > 0),
 });
 
 const saveScreenshot = () => {
