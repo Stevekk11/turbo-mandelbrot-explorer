@@ -85,8 +85,7 @@ export function ddDiv(a: DD, b: DD): DD {
  *
  * Accepts two formats:
  *  - "hi|lo" — compact exact round-trip (produced by ddToString)
- *  - Any standard decimal / scientific-notation string (backward-compatible
- *    with values produced by the old decimal.js code)
+ *  - Any standard decimal / scientific-notation string
  */
 export function ddFromString(s: string): DD {
   // Fast path: hi|lo or QD-style x0|x1|x2|x3

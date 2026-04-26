@@ -137,63 +137,8 @@ const ultraNeonStops: Stop[] = [
   [1.00, 0, 0, 0],
 ];
 
-// ─── Palette 12 — Super 50 ───────────────────────────────────────────────────
-// A massive 50-stop palette for extreme detail and color density
-const super50Stops: Stop[] = [
-  [0.00, 0, 0, 0],   // Black
-  [0.02, 20, 0, 50],   // Deep Night
-  [0.04, 40, 0, 100],   // Navy
-  [0.06, 60, 10, 150],   // Indigo
-  [0.08, 80, 20, 200],   // Royal
-  [0.10, 100, 40, 255],   // Electric Blue
-  [0.12, 50, 80, 255],   // Sky
-  [0.14, 0, 120, 255],   // Azure
-  [0.16, 0, 160, 240],   // Deep Cyan
-  [0.18, 0, 200, 220],   // Turquoise
-  [0.20, 0, 255, 180],   // Mint
-  [0.22, 0, 255, 100],   // Spring
-  [0.24, 0, 255, 0],   // Lime
-  [0.26, 80, 255, 0],   // Chartreuse
-  [0.28, 160, 255, 0],   // Bright Green
-  [0.30, 220, 255, 0],   // Yellow-Green
-  [0.32, 255, 255, 0],   // Yellow
-  [0.34, 255, 220, 0],   // Golden
-  [0.36, 255, 180, 0],   // Amber
-  [0.38, 255, 140, 0],   // Orange
-  [0.40, 255, 100, 0],   // Deep Orange
-  [0.42, 255, 60, 0],   // Orange-Red
-  [0.44, 255, 0, 0],   // Red
-  [0.46, 255, 0, 60],   // Crimson
-  [0.48, 255, 0, 120],   // Rose
-  [0.50, 255, 0, 180],   // Magenta
-  [0.52, 255, 0, 255],   // Fuchsia
-  [0.54, 200, 0, 255],   // Purple
-  [0.56, 150, 0, 255],   // Violet
-  [0.58, 100, 0, 255],   // Deep Purple
-  [0.60, 50, 0, 255],   // Dark Violet
-  [0.62, 80, 50, 200],   // Twilight
-  [0.64, 110, 80, 180],   // Lavender
-  [0.66, 150, 120, 220],   // Pastel Purple
-  [0.68, 180, 160, 255],   // Periwinkle
-  [0.70, 200, 200, 255],   // Off White
-  [0.72, 255, 255, 255],   // White
-  [0.74, 255, 230, 230],   // Pinkish White
-  [0.76, 255, 200, 200],   // Soft Pink
-  [0.78, 255, 150, 150],   // Coral
-  [0.80, 255, 100, 100],   // Light Red
-  [0.82, 180, 50, 50],   // Maroon
-  [0.84, 120, 20, 20],   // Dark Red
-  [0.86, 80, 10, 10],   // Blood
-  [0.88, 40, 5, 5],   // Deep Maroon
-  [0.90, 20, 20, 20],   // Gray
-  [0.92, 60, 60, 60],   // Light Gray
-  [0.94, 120, 120, 120],   // Silver
-  [0.96, 200, 200, 220],   // Steel
-  [1.00, 0, 0, 0],   // back to Black
-];
 
 export const PALETTES: PaletteDef[] = [
-  {name: 'Super 50', icon: '💎', data: buildPalette(super50Stops)},
   {name: 'Ultra Neon', icon: '🚀', data: buildPalette(ultraNeonStops)},
   {name: 'Cyberpunk', icon: '🌃', data: buildPalette(cyberpunkStops)},
   { name: 'Ultra Fractal', icon: '🌌', data: buildPalette(ultraFractalStops) },
