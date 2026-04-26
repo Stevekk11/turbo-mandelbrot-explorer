@@ -1045,8 +1045,78 @@ function updateMultibrotUI() {
 }
 
 
+const MINI_VIEWPORT_DEFAULT = {
+  xMin: -2.0,
+  xMax: 0.5,
+  yMin: -1.25,
+  yMax: 1.25,
+};
+
+const miniViewport = { ...MINI_VIEWPORT_DEFAULT };
+let miniDragActive = false;
+let miniDragStartX = 0;
+let miniDragStartY = 0;
+let miniDragViewport = { ...MINI_VIEWPORT_DEFAULT };
+let miniPointerId: number | null = null;
+
+function getMiniCanvas(): HTMLCanvasElement | null {
+  return document.getElementById('mini-mandelbrot-canvas') as HTMLCanvasElement | null;
+}
+
+function miniScreenToFractal(clientX: number, clientY: number): { re: number; im: number } {
+  const canvas = getMiniCanvas();
+  if (!canvas) {
+    return { re: 0, im: 0 };
+  }
+
+  const rect = canvas.getBoundingClientRect();
+  const relX = (clientX - rect.left) / rect.width;
+  const relY = (clientY - rect.top) / rect.height;
+  return {
+    re: miniViewport.xMin + relX * (miniViewport.xMax - miniViewport.xMin),
+    im: miniViewport.yMin + relY * (miniViewport.yMax - miniViewport.yMin),
+  };
+}
+
+function miniUpdateViewportFromDrag(clientX: number, clientY: number) {
+  const canvas = getMiniCanvas();
+  if (!canvas) return;
+
+  const rect = canvas.getBoundingClientRect();
+  const xRange = miniDragViewport.xMax - miniDragViewport.xMin;
+  const yRange = miniDragViewport.yMax - miniDragViewport.yMin;
+  const dx = clientX - miniDragStartX;
+  const dy = clientY - miniDragStartY;
+
+  miniViewport.xMin = miniDragViewport.xMin - (dx / rect.width) * xRange;
+  miniViewport.xMax = miniViewport.xMin + xRange;
+  miniViewport.yMin = miniDragViewport.yMin - (dy / rect.height) * yRange;
+  miniViewport.yMax = miniViewport.yMin + yRange;
+}
+
+function miniZoomAt(clientX: number, clientY: number, factor: number) {
+  const canvas = getMiniCanvas();
+  if (!canvas) return;
+
+  const rect = canvas.getBoundingClientRect();
+  const anchor = miniScreenToFractal(clientX, clientY);
+  const relX = (clientX - rect.left) / rect.width;
+  const relY = (clientY - rect.top) / rect.height;
+  const xRange = miniViewport.xMax - miniViewport.xMin;
+  const yRange = miniViewport.yMax - miniViewport.yMin;
+  const newXRange = xRange * factor;
+  const newYRange = yRange * factor;
+
+  miniViewport.xMin = anchor.re - newXRange * relX;
+  miniViewport.xMax = miniViewport.xMin + newXRange;
+  miniViewport.yMin = anchor.im - newYRange * relY;
+  miniViewport.yMax = miniViewport.yMin + newYRange;
+}
+
+
 function renderMiniMandelbrot() {
-  const canvas = document.getElementById('mini-mandelbrot-canvas') as HTMLCanvasElement;
+  const canvas = getMiniCanvas();
+  if (!canvas) return;
   const ctx = canvas.getContext('2d')!;
 
   // No explicit background fill needed for black/white rendering
@@ -1056,16 +1126,14 @@ function renderMiniMandelbrot() {
   const img = ctx.createImageData(w, h);
   const data = img.data;
 
-  const xMin = -2.0;
-  const xMax = 0.5;
-  const yMin = -1.25;
-  const yMax = 1.25;
   const power = Number.isFinite(view.multibrotPower) ? Math.max(0.1, view.multibrotPower) : 2.0;
+  const xRange = miniViewport.xMax - miniViewport.xMin;
+  const yRange = miniViewport.yMax - miniViewport.yMin;
 
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
-      let re = xMin + (x / w) * (xMax - xMin);
-      let im = yMin + (y / h) * (yMax - yMin);
+      let re = miniViewport.xMin + (x / w) * xRange;
+      let im = miniViewport.yMin + (y / h) * yRange;
       let zRe = 0, zIm = 0;
       let iter = 0;
       const maxIter = 64;
@@ -1102,26 +1170,71 @@ function renderMiniMandelbrot() {
   ctx.putImageData(img, 0, 0);
 }
 
-document.getElementById('mini-mandelbrot-canvas')?.addEventListener('click', (e) => {
-  const rect = (e.target as HTMLCanvasElement).getBoundingClientRect();
-  const x = e.clientX - rect.left;
-  const y = e.clientY - rect.top;
-  const w = rect.width;
-  const h = rect.height;
+const miniCanvas = getMiniCanvas();
+if (miniCanvas) {
+  miniCanvas.addEventListener('pointerdown', (e) => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    if (!view.isJulia) return;
 
-  const re = -2.0 + (x / w) * 2.5;
-  const im = -1.25 + (y / h) * 2.5;
+    miniDragActive = true;
+    miniPointerId = e.pointerId;
+    miniDragStartX = e.clientX;
+    miniDragStartY = e.clientY;
+    miniDragViewport = { ...miniViewport };
+    miniCanvas.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  });
 
-  view.juliaRe = String(re);
-  view.juliaIm = String(im);
+  miniCanvas.addEventListener('pointermove', (e) => {
+    if (!view.isJulia || !miniDragActive || miniPointerId !== e.pointerId) return;
+    e.preventDefault();
+    miniUpdateViewportFromDrag(e.clientX, e.clientY);
+    renderMiniMandelbrot();
+  });
 
-  const reInput = document.getElementById('julia-re') as HTMLInputElement;
-  const imInput = document.getElementById('julia-im') as HTMLInputElement;
-  if (reInput) reInput.value = String(re.toFixed(4));
-  if (imInput) imInput.value = String(im.toFixed(4));
+  miniCanvas.addEventListener('pointerup', (e) => {
+    if (!view.isJulia || miniPointerId !== e.pointerId) return;
 
-  scheduleRender();
-});
+    const moved = Math.hypot(e.clientX - miniDragStartX, e.clientY - miniDragStartY);
+    const wasClick = moved < 5;
+
+    if (miniCanvas.hasPointerCapture(e.pointerId)) {
+      miniCanvas.releasePointerCapture(e.pointerId);
+    }
+
+    miniDragActive = false;
+    miniPointerId = null;
+
+    if (!wasClick) {
+      renderMiniMandelbrot();
+      return;
+    }
+
+    const point = miniScreenToFractal(e.clientX, e.clientY);
+    view.juliaRe = String(point.re);
+    view.juliaIm = String(point.im);
+
+    const reInput = document.getElementById('julia-re') as HTMLInputElement;
+    const imInput = document.getElementById('julia-im') as HTMLInputElement;
+    if (reInput) reInput.value = String(point.re.toFixed(4));
+    if (imInput) imInput.value = String(point.im.toFixed(4));
+
+    scheduleRender();
+  });
+
+  miniCanvas.addEventListener('pointercancel', () => {
+    miniDragActive = false;
+    miniPointerId = null;
+  });
+
+  miniCanvas.addEventListener('wheel', (e) => {
+    if (!view.isJulia) return;
+    e.preventDefault();
+    const factor = Math.exp(e.deltaY * 0.002);
+    miniZoomAt(e.clientX, e.clientY, factor);
+    renderMiniMandelbrot();
+  }, { passive: false });
+}
 
 // ─── Screenshot ───────────────────────────────────────────────────────────────
 
