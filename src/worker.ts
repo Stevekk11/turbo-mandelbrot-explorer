@@ -58,6 +58,18 @@ function computeComplexPower(re: number, im: number, power: number): [number, nu
   if (power === 2) {
     return [re * re - im * im, 2.0 * re * im];
   }
+  if (power === 3) {
+    const re2 = re * re;
+    const im2 = im * im;
+    return [re * (re2 - 3.0 * im2), im * (3.0 * re2 - im2)];
+  }
+  if (power === 4) {
+    const re2 = re * re;
+    const im2 = im * im;
+    const a = re2 - im2;
+    const b = 2.0 * re * im;
+    return [a * a - b * b, 2.0 * a * b];
+  }
   const radiusSq = re * re + im * im;
   if (radiusSq === 0.0) {
     return [0.0, 0.0];
@@ -65,14 +77,6 @@ function computeComplexPower(re: number, im: number, power: number): [number, nu
   const radiusPow = Math.pow(Math.sqrt(radiusSq), power);
   const angle = Math.atan2(im, re) * power;
   return [radiusPow * Math.cos(angle), radiusPow * Math.sin(angle)];
-}
-
-function smoothIteration(iter: number, radiusSq: number, power: number): number {
-  const base = power > 1.000001 ? power : 2.0;
-  const logBase = Math.log(base);
-  const logZn = Math.log(radiusSq) * 0.5;
-  const nu = Math.log(logZn / logBase) / logBase;
-  return iter + 1.0 - nu;
 }
 
 function computeTileJS(
@@ -83,6 +87,8 @@ function computeTileJS(
 ): void {
   const dx = (xMax - xMin) / width;
   const dy = (yMax - yMin) / height;
+  const smoothBase = fractalType === 0 && multibrotPower > 1.000001 ? multibrotPower : 2.0;
+  const logBase = Math.log(smoothBase);
 
   for (let py = 0; py < height; py++) {
     const im = yMin + py * dy;
@@ -119,7 +125,9 @@ function computeTileJS(
       if (iter >= maxIter) {
         val = -1.0;
       } else {
-        val = smoothIteration(iter, x2 + y2, fractalType === 0 ? multibrotPower : 2.0);
+        const logZn = Math.log(x2 + y2) * 0.5;
+        const nu = Math.log(logZn / logBase) / logBase;
+        val = iter + 1.0 - nu;
       }
 
       buf[py * width + px] = val;

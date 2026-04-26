@@ -47,6 +47,9 @@ export function computeTile(
   const dx: f64 = (xMax - xMin) / <f64>width;
   const dy: f64 = (yMax - yMin) / <f64>height;
   const isJ: bool = isJulia != 0;
+  const multibrotMode: i32 = multibrotPower == 2.0 ? 2 : multibrotPower == 3.0 ? 3 : multibrotPower == 4.0 ? 4 : 0;
+  const smoothBase: f64 = fractalType == 0 && multibrotPower > 1.000001 ? multibrotPower : 2.0;
+  const logBase: f64 = Math.log(smoothBase);
 
   for (let py: i32 = 0; py < height; py++) {
     const im: f64 = yMin + <f64>py * dy;
@@ -75,19 +78,37 @@ export function computeTile(
           zRe = x2 - y2 + cRe;
         } else {
           // Multibrot: z_{n+1} = z_n^d + c, where d is a real exponent
-          if (multibrotPower == 2.0) {
-            zIm = 2.0 * zRe * zIm + cIm;
-            zRe = x2 - y2 + cRe;
-          } else {
-            const radiusSq: f64 = x2 + y2;
-            if (radiusSq == 0.0) {
-              zRe = cRe;
-              zIm = cIm;
-            } else {
-              const radiusPow: f64 = Math.pow(Math.sqrt(radiusSq), multibrotPower);
-              const angle: f64 = Math.atan2(zIm, zRe) * multibrotPower;
-              zRe = radiusPow * Math.cos(angle) + cRe;
-              zIm = radiusPow * Math.sin(angle) + cIm;
+          switch (multibrotMode) {
+            case 2:
+              zIm = 2.0 * zRe * zIm + cIm;
+              zRe = x2 - y2 + cRe;
+              break;
+            case 3: {
+              const nextRe: f64 = zRe * (x2 - 3.0 * y2);
+              const nextIm: f64 = zIm * (3.0 * x2 - y2);
+              zRe = nextRe + cRe;
+              zIm = nextIm + cIm;
+              break;
+            }
+            case 4: {
+              const xy: f64 = zRe * zIm;
+              const a: f64 = x2 - y2;
+              const b: f64 = 2.0 * xy;
+              zRe = (a * a - b * b) + cRe;
+              zIm = 2.0 * a * b + cIm;
+              break;
+            }
+            default: {
+              const radiusSq: f64 = x2 + y2;
+              if (radiusSq == 0.0) {
+                zRe = cRe;
+                zIm = cIm;
+              } else {
+                const radiusPow: f64 = Math.pow(Math.sqrt(radiusSq), multibrotPower);
+                const angle: f64 = Math.atan2(zIm, zRe) * multibrotPower;
+                zRe = radiusPow * Math.cos(angle) + cRe;
+                zIm = radiusPow * Math.sin(angle) + cIm;
+              }
             }
           }
         }
@@ -103,8 +124,6 @@ export function computeTile(
       } else {
         // Smooth iteration count with large escape radius
         const log_zn: f64 = Math.log(x2 + y2) * 0.5;
-        const base: f64 = fractalType == 0 && multibrotPower > 1.000001 ? multibrotPower : 2.0;
-        const logBase: f64 = Math.log(base);
         const nu: f64 = Math.log(log_zn / logBase) / logBase;
         val = <f32>(<f64>iter + 1.0 - nu);
       }
