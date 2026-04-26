@@ -34,12 +34,14 @@ export function allocBuffer(width: i32, height: i32): i32 {
  * @param juliaRe Real part of Julia constant (ignored for Mandelbrot)
  * @param juliaIm Imaginary part of Julia constant (ignored for Mandelbrot)
  * @param isJulia Non-zero for Julia set, zero for Mandelbrot
+ * @param multibrotPower Real exponent d used for Multibrot when fractalType is 0
  * @param fractalType Fractal formula (0=Mandelbrot, 1=Burning Ship, 2=Tricorn)
  */
 export function computeTile(
     xMin: f64, yMin: f64, xMax: f64, yMax: f64,
     width: i32, height: i32, maxIter: i32,
     juliaRe: f64, juliaIm: f64, isJulia: i32,
+  multibrotPower: f64,
     fractalType: i32
 ): void {
   const dx: f64 = (xMax - xMin) / <f64>width;
@@ -72,9 +74,22 @@ export function computeTile(
           zIm = -2.0 * zRe * zIm + cIm;
           zRe = x2 - y2 + cRe;
         } else {
-          // Standard Mandelbrot
-          zIm = 2.0 * zRe * zIm + cIm;
-          zRe = x2 - y2 + cRe;
+          // Multibrot: z_{n+1} = z_n^d + c, where d is a real exponent
+          if (multibrotPower == 2.0) {
+            zIm = 2.0 * zRe * zIm + cIm;
+            zRe = x2 - y2 + cRe;
+          } else {
+            const radiusSq: f64 = x2 + y2;
+            if (radiusSq == 0.0) {
+              zRe = cRe;
+              zIm = cIm;
+            } else {
+              const radiusPow: f64 = Math.pow(Math.sqrt(radiusSq), multibrotPower);
+              const angle: f64 = Math.atan2(zIm, zRe) * multibrotPower;
+              zRe = radiusPow * Math.cos(angle) + cRe;
+              zIm = radiusPow * Math.sin(angle) + cIm;
+            }
+          }
         }
         x2 = zRe * zRe;
         y2 = zIm * zIm;
@@ -88,7 +103,9 @@ export function computeTile(
       } else {
         // Smooth iteration count with large escape radius
         const log_zn: f64 = Math.log(x2 + y2) * 0.5;
-        const nu: f64 = Math.log(log_zn / Math.LN2) / Math.LN2;
+        const base: f64 = fractalType == 0 && multibrotPower > 1.000001 ? multibrotPower : 2.0;
+        const logBase: f64 = Math.log(base);
+        const nu: f64 = Math.log(log_zn / logBase) / logBase;
         val = <f32>(<f64>iter + 1.0 - nu);
       }
 

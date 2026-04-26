@@ -77,11 +77,13 @@
     <div>
       <select id="fractal-type-select"
               class="block w-full bg-gray-700 border-none rounded text-sm px-2 py-1 focus:ring focus:ring-blue-500">
-        <option value="0">🌌 Mandelbrot</option>
+        <option value="0">🌌 Mandelbrot / Multibrot</option>
         <option value="1">🔥 Burning Ship</option>
         <option value="2">❄️ Tricorn</option>
       </select>
     </div>
+    <label class="ctrl-label" style="margin-top:0.5rem" for="multibrot-power">Multibrot exponent d</label>
+    <input id="multibrot-power" type="number" min="0.1" max="16" step="0.1" value="2.0" />
     <label class="ctrl-label" style="margin-top:0.5rem">Max Iterations</label>
     <div class="ctrl-row">
       <input id="iter-slider" type="range" min="32" max="10000" value="256" step="32"/>

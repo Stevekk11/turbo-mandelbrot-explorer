@@ -52,6 +52,7 @@ const DEFAULT_VIEW: ViewState = {
   zoom: '1',
   shadows: false,
   fractalType: 0,
+  multibrotPower: 2.0,
 };
 
 let view: ViewState = { ...DEFAULT_VIEW };
@@ -251,6 +252,7 @@ function scheduleRender() {
         colorOffset: view.colorOffset,
         shadows: view.shadows,
         fractalType: view.fractalType,
+        multibrotPower: view.multibrotPower,
         precisionTier,
         refRe: refReStr,
         refIm: refImStr,
@@ -384,6 +386,7 @@ function computeOrbitPointsAtClientPoint(clientX: number, clientY: number): { re
 
   const juliaRe = Number.parseFloat(view.juliaRe) || 0;
   const juliaIm = Number.parseFloat(view.juliaIm) || 0;
+  const power = Number.isFinite(view.multibrotPower) ? Math.max(0.1, view.multibrotPower) : 2.0;
   let zRe = view.isJulia ? seed.re : 0;
   let zIm = view.isJulia ? seed.im : 0;
   const cRe = view.isJulia ? juliaRe : seed.re;
@@ -407,10 +410,17 @@ function computeOrbitPointsAtClientPoint(clientX: number, clientY: number): { re
       zRe = nextRe;
       zIm = nextIm;
     } else {
-      const nextRe = zRe * zRe - zIm * zIm + cRe;
-      const nextIm = 2 * zRe * zIm + cIm;
-      zRe = nextRe;
-      zIm = nextIm;
+      const radiusSq = zRe * zRe + zIm * zIm;
+      let powRe = 0;
+      let powIm = 0;
+      if (radiusSq > 0) {
+        const radiusPow = Math.pow(Math.sqrt(radiusSq), power);
+        const angle = Math.atan2(zIm, zRe) * power;
+        powRe = radiusPow * Math.cos(angle);
+        powIm = radiusPow * Math.sin(angle);
+      }
+      zRe = powRe + cRe;
+      zIm = powIm + cIm;
     }
 
     orbit.push({ re: zRe, im: zIm });
@@ -640,7 +650,8 @@ canvas.addEventListener('mousemove', (e) => {
         view.maxIter,
         Number(view.juliaRe),
         Number(view.juliaIm),
-        view.isJulia
+      view.isJulia,
+      view.multibrotPower
     );
     hoverIterEl.textContent = `⟳ ${res.inside ? '∞' : res.escapeIter}`;
   }
@@ -948,10 +959,12 @@ function resetView() {
   const savedPalette = view.palette;
   const savedColorSpeed = view.colorSpeed;
   const savedFractalType = view.fractalType;
+  const savedMultibrotPower = view.multibrotPower;
   view = { ...DEFAULT_VIEW };
   view.palette = savedPalette;
   view.colorSpeed = savedColorSpeed;
   view.fractalType = savedFractalType;
+  view.multibrotPower = savedMultibrotPower;
   const aspect = canvas.width / canvas.height;
   const yRange = 3.5 / aspect;
   view.yMin = String(-yRange / 2);
@@ -959,6 +972,8 @@ function resetView() {
   updateZoom();
   updateIterDisplay();
   updatePaletteUI();
+  updateFractalTypeUI();
+  updateMultibrotUI();
   updateSpeedUI();
   scheduleRender();
 }
@@ -1022,6 +1037,13 @@ function updateFractalTypeUI() {
   if (sel) sel.value = String(view.fractalType);
 }
 
+function updateMultibrotUI() {
+  const input = document.getElementById('multibrot-power') as HTMLInputElement | null;
+  if (!input) return;
+  input.value = view.multibrotPower.toFixed(2);
+  input.disabled = view.fractalType !== 0;
+}
+
 
 function renderMiniMandelbrot() {
   const canvas = document.getElementById('mini-mandelbrot-canvas') as HTMLCanvasElement;
@@ -1038,6 +1060,7 @@ function renderMiniMandelbrot() {
   const xMax = 0.5;
   const yMin = -1.25;
   const yMax = 1.25;
+  const power = Number.isFinite(view.multibrotPower) ? Math.max(0.1, view.multibrotPower) : 2.0;
 
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
@@ -1047,9 +1070,17 @@ function renderMiniMandelbrot() {
       let iter = 0;
       const maxIter = 64;
       while (zRe * zRe + zIm * zIm <= 4 && iter < maxIter) {
-        let tmp = zRe * zRe - zIm * zIm + re;
-        zIm = 2 * zRe * zIm + im;
-        zRe = tmp;
+        const radiusSq = zRe * zRe + zIm * zIm;
+        let powRe = 0;
+        let powIm = 0;
+        if (radiusSq > 0) {
+          const radiusPow = Math.pow(Math.sqrt(radiusSq), power);
+          const angle = Math.atan2(zIm, zRe) * power;
+          powRe = radiusPow * Math.cos(angle);
+          powIm = radiusPow * Math.sin(angle);
+        }
+        zRe = powRe + re;
+        zIm = powIm + im;
         iter++;
       }
 
@@ -1101,7 +1132,15 @@ function saveScreenshot() {
   link.click();
 }
 
-function estimateEscapeSample(re: number, im: number, maxIter: number, juliaRe = 0, juliaIm = 0, isJulia = false): {
+function estimateEscapeSample(
+    re: number,
+    im: number,
+    maxIter: number,
+    juliaRe = 0,
+    juliaIm = 0,
+    isJulia = false,
+    multibrotPower = 2.0
+): {
   inside: boolean;
   escapeIter: number
 } {
@@ -1109,6 +1148,7 @@ function estimateEscapeSample(re: number, im: number, maxIter: number, juliaRe =
   let zIm = isJulia ? im : 0;
   const cRe = isJulia ? juliaRe : re;
   const cIm = isJulia ? juliaIm : im;
+  const power = Number.isFinite(multibrotPower) ? Math.max(0.1, multibrotPower) : 2.0;
 
   for (let iter = 0; iter < maxIter; iter++) {
     const x2 = zRe * zRe;
@@ -1126,9 +1166,17 @@ function estimateEscapeSample(re: number, im: number, maxIter: number, juliaRe =
       zIm = -2 * zRe * zIm + cIm;
       zRe = x2 - y2 + cRe;
     } else {
-      // Mandelbrot: z_{n+1} = z^2 + c
-      zIm = 2 * zRe * zIm + cIm;
-      zRe = x2 - y2 + cRe;
+      // Multibrot: z_{n+1} = z^d + c
+      let powRe = 0;
+      let powIm = 0;
+      if (x2 + y2 > 0) {
+        const radiusPow = Math.pow(Math.sqrt(x2 + y2), power);
+        const angle = Math.atan2(zIm, zRe) * power;
+        powRe = radiusPow * Math.cos(angle);
+        powIm = radiusPow * Math.sin(angle);
+      }
+      zRe = powRe + cRe;
+      zIm = powIm + cIm;
     }
   }
 
@@ -1163,7 +1211,7 @@ function buildEscapeGuidedPath(start: { re: number, im: number }, end: { re: num
   const baseStep = Math.max(xRange, yRange) * 0.0008;
 
   function isInteriorPoint(point: { re: number, im: number }): boolean {
-    return estimateEscapeSample(point.re, point.im, maxIter).inside;
+    return estimateEscapeSample(point.re, point.im, maxIter, 0, 0, false, view.multibrotPower).inside;
   }
 
   function segmentStaysInterior(a: { re: number, im: number }, b: { re: number, im: number }): boolean {
@@ -1632,9 +1680,27 @@ function initSettingsPanel() {
     fractalTypeSelect.value = String(view.fractalType);
     fractalTypeSelect.addEventListener('change', () => {
       view.fractalType = parseInt(fractalTypeSelect.value);
+      updateMultibrotUI();
       orbitPoints = null;
+      if (view.isJulia) renderMiniMandelbrot();
       scheduleRender();
     });
+  }
+
+  const multibrotInput = document.getElementById('multibrot-power') as HTMLInputElement | null;
+  if (multibrotInput) {
+    updateMultibrotUI();
+    multibrotInput.addEventListener('input', () => {
+      const parsed = Number.parseFloat(multibrotInput.value);
+      if (!Number.isFinite(parsed)) return;
+      view.multibrotPower = Math.min(16, Math.max(0.1, parsed));
+      if (view.isJulia) renderMiniMandelbrot();
+      if (view.fractalType === 0) {
+        orbitPoints = null;
+        scheduleRender();
+      }
+    });
+    multibrotInput.addEventListener('change', () => updateMultibrotUI());
   }
 
 
@@ -1778,7 +1844,13 @@ function applyBookmark(bm: Bookmark) {
   view.isJulia = bm.isJulia;
   view.juliaRe = bm.juliaRe;
   view.juliaIm = bm.juliaIm;
-  updateZoom(); updateIterDisplay(); updatePaletteUI();
+  view.fractalType = bm.fractalType ?? DEFAULT_VIEW.fractalType;
+  view.multibrotPower = bm.multibrotPower ?? DEFAULT_VIEW.multibrotPower;
+  updateZoom();
+  updateIterDisplay();
+  updatePaletteUI();
+  updateFractalTypeUI();
+  updateMultibrotUI();
   scheduleRender();
 }
 

@@ -28,6 +28,8 @@ export interface ViewState {
   shadows: boolean;
   /** Fractal type: 0=Mandelbrot, 1=Burning Ship, 2=Tricorn */
   fractalType: number;
+  /** Real exponent d for Multibrot (used with fractalType=0) */
+  multibrotPower: number;
 }
 
 /** Message sent to a worker requesting tile rendering */
@@ -63,6 +65,8 @@ export interface RenderTask {
   shadows: boolean;
   /** Fractal type: 0=Mandelbrot, 1=Burning Ship, 2=Tricorn */
   fractalType: number;
+  /** Real exponent d for Multibrot (used with fractalType=0) */
+  multibrotPower: number;
   /** Explicit precision path for this tile. */
   precisionTier?: PrecisionTier;
   /**
@@ -150,6 +154,8 @@ export interface Bookmark {
   isJulia: boolean;
   juliaRe: string;
   juliaIm: string;
+  fractalType?: number;
+  multibrotPower?: number;
 }
 
 /** Precision tiers for rendering paths */

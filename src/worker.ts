@@ -22,6 +22,7 @@ interface MandelbrotWasm {
         xMin: number, yMin: number, xMax: number, yMax: number,
         width: number, height: number, maxIter: number,
         juliaRe: number, juliaIm: number, isJulia: number,
+      multibrotPower: number,
         fractalType: number
     ) => void;
     getBufferSize: () => number;
@@ -53,11 +54,32 @@ async function loadWasm(url: string): Promise<void> {
 
 // ─── JavaScript fallback for normal-precision tiles (WASM unavailable) ───────
 
+function computeComplexPower(re: number, im: number, power: number): [number, number] {
+  if (power === 2) {
+    return [re * re - im * im, 2.0 * re * im];
+  }
+  const radiusSq = re * re + im * im;
+  if (radiusSq === 0.0) {
+    return [0.0, 0.0];
+  }
+  const radiusPow = Math.pow(Math.sqrt(radiusSq), power);
+  const angle = Math.atan2(im, re) * power;
+  return [radiusPow * Math.cos(angle), radiusPow * Math.sin(angle)];
+}
+
+function smoothIteration(iter: number, radiusSq: number, power: number): number {
+  const base = power > 1.000001 ? power : 2.0;
+  const logBase = Math.log(base);
+  const logZn = Math.log(radiusSq) * 0.5;
+  const nu = Math.log(logZn / logBase) / logBase;
+  return iter + 1.0 - nu;
+}
+
 function computeTileJS(
     xMin: number, yMin: number, xMax: number, yMax: number,
     width: number, height: number, maxIter: number,
     juliaRe: number, juliaIm: number, isJulia: boolean,
-    buf: Float32Array, fractalType = 0
+    buf: Float32Array, fractalType = 0, multibrotPower = 2.0
 ): void {
   const dx = (xMax - xMin) / width;
   const dy = (yMax - yMin) / height;
@@ -84,8 +106,9 @@ function computeTileJS(
           zIm = -2.0 * zRe * zIm + cIm;
           zRe = x2 - y2 + cRe;
         } else {
-          zIm = 2.0 * zRe * zIm + cIm;
-          zRe = x2 - y2 + cRe;
+          const [powRe, powIm] = computeComplexPower(zRe, zIm, multibrotPower);
+          zRe = powRe + cRe;
+          zIm = powIm + cIm;
         }
         x2 = zRe * zRe;
         y2 = zIm * zIm;
@@ -96,9 +119,7 @@ function computeTileJS(
       if (iter >= maxIter) {
         val = -1.0;
       } else {
-        const log_zn = Math.log(x2 + y2) * 0.5;
-        const nu = Math.log(log_zn / Math.LN2) / Math.LN2;
-        val = iter + 1.0 - nu;
+        val = smoothIteration(iter, x2 + y2, fractalType === 0 ? multibrotPower : 2.0);
       }
 
       buf[py * width + px] = val;
@@ -441,6 +462,7 @@ function renderTile(task: RenderTask): ArrayBuffer {
     juliaRe, juliaIm, isJulia, palette, colorSpeed, colorOffset, shadows
   } = task;
   const fractalType = task.fractalType ?? 0;
+  const multibrotPower = Number.isFinite(task.multibrotPower) ? Math.max(0.1, task.multibrotPower) : 2.0;
   const size = tileW * tileH;
 
   const xMinHi = qdHi(qdFromString(xMin));
@@ -451,7 +473,8 @@ function renderTile(task: RenderTask): ArrayBuffer {
   const dxCheck = xMaxHi - xMinHi;
   const inferredTier = !Number.isFinite(dxCheck) ? 'qd' : (Math.abs(dxCheck) < 1e-28 ? 'qd' : (Math.abs(dxCheck) < 2e-13 ? 'dd' : 'wasm'));
   const baseTier = task.precisionTier ?? inferredTier;
-  const precisionTier = fractalType !== 0 && baseTier !== 'wasm' ? 'wasm' : baseTier;
+  const requiresGeneralFormula = fractalType !== 0 || Math.abs(multibrotPower - 2.0) > 1e-12;
+  const precisionTier = requiresGeneralFormula && baseTier !== 'wasm' ? 'wasm' : baseTier;
 
   let iterBuf: Float32Array;
 
@@ -461,6 +484,7 @@ function renderTile(task: RenderTask): ArrayBuffer {
         xMinHi, yMinHi, xMaxHi, yMaxHi,
         tileW, tileH, maxIter,
         Number(juliaRe), Number(juliaIm), isJulia ? 1 : 0,
+      multibrotPower,
         fractalType
     );
     iterBuf = new Float32Array(
@@ -476,7 +500,7 @@ function renderTile(task: RenderTask): ArrayBuffer {
         xMinHi, yMinHi, xMaxHi, yMaxHi,
         tileW, tileH, maxIter,
         Number(juliaRe), Number(juliaIm), isJulia,
-        _jsBuf, fractalType
+      _jsBuf, fractalType, multibrotPower
     );
     iterBuf = _jsBuf;
   } else if (precisionTier === 'dd') {
