@@ -149,7 +149,7 @@ export const PALETTES: PaletteDef[] = [
 ];
 
 /** Index of the mutable random palette slot in PALETTES */
-export const RANDOM_PALETTE_INDEX = 7;
+export const RANDOM_PALETTE_INDEX = 6;
 
 function hslToRgb(h: number, s: number, l: number): [number, number, number] {
   const c = (1 - Math.abs(2 * l - 1)) * s;

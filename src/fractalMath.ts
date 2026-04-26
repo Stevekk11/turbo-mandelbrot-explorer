@@ -61,6 +61,26 @@ export function computeComplexPower(re: number, im: number, power: number): [num
     return [radiusPow * Math.cos(angle), radiusPow * Math.sin(angle)];
 }
 
+export function stepFractalIteration(
+    zRe: number,
+    zIm: number,
+    cRe: number,
+    cIm: number,
+    fractalType: number,
+    multibrotPower: number
+): [number, number] {
+    if (fractalType === 1) {
+        const aRe = Math.abs(zRe);
+        const aIm = Math.abs(zIm);
+        return [aRe * aRe - aIm * aIm + cRe, 2 * aRe * aIm + cIm];
+    }
+    if (fractalType === 2) {
+        return [zRe * zRe - zIm * zIm + cRe, -2 * zRe * zIm + cIm];
+    }
+    const [powRe, powIm] = computeComplexPower(zRe, zIm, multibrotPower);
+    return [powRe + cRe, powIm + cIm];
+}
+
 export function estimateEscapeSample(
     re: number,
     im: number,
@@ -89,17 +109,7 @@ export function estimateEscapeSample(
             return {inside: false, escapeIter: iter};
         }
 
-        if (fractalType === 1) {
-            zIm = 2 * Math.abs(zRe) * Math.abs(zIm) + cIm;
-            zRe = x2 - y2 + cRe;
-        } else if (fractalType === 2) {
-            zIm = -2 * zRe * zIm + cIm;
-            zRe = x2 - y2 + cRe;
-        } else {
-            const [powRe, powIm] = computeComplexPower(zRe, zIm, power);
-            zRe = powRe + cRe;
-            zIm = powIm + cIm;
-        }
+        [zRe, zIm] = stepFractalIteration(zRe, zIm, cRe, cIm, fractalType, power);
     }
 
     return {inside: true, escapeIter: maxIter};
@@ -125,23 +135,7 @@ export function computeOrbitPoints(
     for (let iter = 0; iter < maxIter; iter++) {
         if (zRe * zRe + zIm * zIm > 4) break;
 
-        if (view.fractalType === 1) {
-            const aRe = Math.abs(zRe);
-            const aIm = Math.abs(zIm);
-            const nextRe = aRe * aRe - aIm * aIm + cRe;
-            const nextIm = 2 * aRe * aIm + cIm;
-            zRe = nextRe;
-            zIm = nextIm;
-        } else if (view.fractalType === 2) {
-            const nextRe = zRe * zRe - zIm * zIm + cRe;
-            const nextIm = -2 * zRe * zIm + cIm;
-            zRe = nextRe;
-            zIm = nextIm;
-        } else {
-            const [powRe, powIm] = computeComplexPower(zRe, zIm, power);
-            zRe = powRe + cRe;
-            zIm = powIm + cIm;
-        }
+        [zRe, zIm] = stepFractalIteration(zRe, zIm, cRe, cIm, view.fractalType, power);
 
         orbit.push({re: zRe, im: zIm});
     }

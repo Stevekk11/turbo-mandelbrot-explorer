@@ -9,6 +9,7 @@
 
 import type {RecolorTask, RenderTask, ToWorkerMessage} from './types';
 import {PALETTE_SIZE, PALETTES, samplePaletteData} from './colorPalettes';
+import {stepFractalIteration} from './fractalMath';
 import {type DD, ddAdd, ddDivNum, ddFromString, ddMul, ddMulNum, ddSub} from './dd';
 import {type QD, qdAdd, qdDivNum, qdFromString, qdHi, qdMul, qdMulNum, qdSub} from './qd';
 
@@ -54,59 +55,6 @@ async function loadWasm(url: string): Promise<void> {
 
 // ─── JavaScript fallback for normal-precision tiles (WASM unavailable) ───────
 
-function computeComplexPower(re: number, im: number, power: number): [number, number] {
-  if (power === 2) {
-    return [re * re - im * im, 2.0 * re * im];
-  }
-  if (power === 3) {
-    const re2 = re * re;
-    const im2 = im * im;
-    return [re * (re2 - 3.0 * im2), im * (3.0 * re2 - im2)];
-  }
-  if (power === 4) {
-    const re2 = re * re;
-    const im2 = im * im;
-    const a = re2 - im2;
-    const b = 2.0 * re * im;
-    return [a * a - b * b, 2.0 * a * b];
-  }
-  if (power === -2) {
-    const re2 = re * re;
-    const im2 = im * im;
-    const r2 = re2 + im2;
-    if (r2 === 0.0) return [Infinity, Infinity];
-    const invR4 = 1.0 / (r2 * r2);
-    return [(re2 - im2) * invR4, (-2.0 * re * im) * invR4];
-  }
-  if (power === -3) {
-    const re2 = re * re;
-    const im2 = im * im;
-    const r2 = re2 + im2;
-    if (r2 === 0.0) return [Infinity, Infinity];
-    const invR6 = 1.0 / (r2 * r2 * r2);
-    const pRe = re * (re2 - 3.0 * im2);
-    const pIm = im * (3.0 * re2 - im2);
-    return [pRe * invR6, -pIm * invR6];
-  }
-  if (power === -4) {
-    const re2 = re * re;
-    const im2 = im * im;
-    const r2 = re2 + im2;
-    if (r2 === 0.0) return [Infinity, Infinity];
-    const a = re2 - im2;
-    const b = 2.0 * re * im;
-    const invR8 = 1.0 / (r2 * r2 * r2 * r2);
-    return [(a * a - b * b) * invR8, (-2.0 * a * b) * invR8];
-  }
-  const radiusSq = re * re + im * im;
-  if (radiusSq === 0.0) {
-    return power < 0.0 ? [Infinity, Infinity] : [0.0, 0.0];
-  }
-  const radiusPow = Math.pow(Math.sqrt(radiusSq), power);
-  const angle = Math.atan2(im, re) * power;
-  return [radiusPow * Math.cos(angle), radiusPow * Math.sin(angle)];
-}
-
 function computeTileJS(
     xMin: number, yMin: number, xMax: number, yMax: number,
     width: number, height: number, maxIter: number,
@@ -134,17 +82,7 @@ function computeTileJS(
       let y2 = zIm * zIm;
 
       while (x2 + y2 <= 100000.0 && iter < maxIter) {
-        if (fractalType === 1) {
-          zIm = 2.0 * Math.abs(zRe) * Math.abs(zIm) + cIm;
-          zRe = x2 - y2 + cRe;
-        } else if (fractalType === 2) {
-          zIm = -2.0 * zRe * zIm + cIm;
-          zRe = x2 - y2 + cRe;
-        } else {
-          const [powRe, powIm] = computeComplexPower(zRe, zIm, multibrotPower);
-          zRe = powRe + cRe;
-          zIm = powIm + cIm;
-        }
+        [zRe, zIm] = stepFractalIteration(zRe, zIm, cRe, cIm, fractalType, multibrotPower);
         x2 = zRe * zRe;
         y2 = zIm * zIm;
         iter++;
