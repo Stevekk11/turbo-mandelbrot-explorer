@@ -65,6 +65,7 @@ let isRendering = false;
 let colorAnimRaf = 0;
 let colorAnimActive = false;
 let orbitModeActive = false;
+let axisGridVisible = false;
 
 const audioVisualizer = createAudioVisualizer();
 const AUDIO_RECOLOR_INTERVAL_MS = 33;
@@ -1508,6 +1509,142 @@ function drawOrbit() {
   }
   ctx.restore();
 }
+
+function formatAxisLabel(value: number, step: number): string {
+  const absValue = Math.abs(value);
+  const absStep = Math.abs(step);
+
+  if (!Number.isFinite(value)) return '';
+  if (absValue !== 0 && (absValue >= 1e6 || absValue < 1e-4)) {
+    return value.toExponential(2);
+  }
+
+  const decimals = absStep >= 1 ? 0 : Math.min(8, Math.max(0, Math.ceil(-Math.log10(absStep)) + 1));
+  return value.toFixed(decimals);
+}
+
+function niceTickStep(range: number, targetTicks: number): number {
+  const safeRange = Math.abs(range);
+  if (!Number.isFinite(safeRange) || safeRange === 0) return 1;
+
+  const rawStep = safeRange / Math.max(1, targetTicks);
+  const exponent = Math.floor(Math.log10(rawStep));
+  const fraction = rawStep / Math.pow(10, exponent);
+
+  let niceFraction = 1;
+  if (fraction < 1.5) niceFraction = 1;
+  else if (fraction < 3) niceFraction = 2;
+  else if (fraction < 7) niceFraction = 5;
+  else niceFraction = 10;
+
+  return niceFraction * Math.pow(10, exponent);
+}
+
+function drawAxisGrid() {
+  if (!axisGridVisible) return;
+
+  const dXMin = qdFromString(view.xMin);
+  const dXMax = qdFromString(view.xMax);
+  const dYMin = qdFromString(view.yMin);
+  const dYMax = qdFromString(view.yMax);
+
+  const xMin = qdHi(dXMin);
+  const xMax = qdHi(dXMax);
+  const yMin = qdHi(dYMin);
+  const yMax = qdHi(dYMax);
+  const xRange = xMax - xMin;
+  const yRange = yMax - yMin;
+  if (!Number.isFinite(xRange) || !Number.isFinite(yRange) || xRange <= 0 || yRange <= 0) return;
+
+  const w = canvas.width;
+  const h = canvas.height;
+  const xScale = w / xRange;
+  const yScale = h / yRange;
+  const gridStepX = niceTickStep(xRange, Math.max(4, Math.round(w / 130)));
+  const gridStepY = niceTickStep(yRange, Math.max(4, Math.round(h / 130)));
+  const labelFontSize = Math.max(10, Math.min(13, Math.round(w / 120)));
+  const labelPad = 4;
+
+  const toScreenX = (x: number) => (x - xMin) * xScale;
+  const toScreenY = (y: number) => (y - yMin) * yScale;
+
+  ctx.save();
+  ctx.font = `600 ${labelFontSize}px ui-monospace, monospace`;
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'center';
+
+  const visibleXStart = Math.ceil(xMin / gridStepX) * gridStepX;
+  const visibleYStart = Math.ceil(yMin / gridStepY) * gridStepY;
+
+  for (let x = visibleXStart; x <= xMax + gridStepX * 0.5; x += gridStepX) {
+    const sx = toScreenX(x);
+    if (sx < -1 || sx > w + 1) continue;
+
+    ctx.strokeStyle = Math.abs(x) < gridStepX * 0.5 ? 'rgba(255,255,255,0.50)' : 'rgba(148,163,184,0.18)';
+    ctx.lineWidth = Math.abs(x) < gridStepX * 0.5 ? 1.6 : 1;
+    ctx.beginPath();
+    ctx.moveTo(sx, 0);
+    ctx.lineTo(sx, h);
+    ctx.stroke();
+
+    const label = formatAxisLabel(x, gridStepX);
+    if (label) {
+      const ly = Math.min(h - labelFontSize - 2, h - 8);
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.78)';
+      const metrics = ctx.measureText(label);
+      ctx.fillRect(sx - metrics.width / 2 - labelPad, ly - labelFontSize / 2 - labelPad, metrics.width + labelPad * 2, labelFontSize + labelPad * 2);
+      ctx.fillStyle = 'rgba(226, 232, 240, 0.95)';
+      ctx.fillText(label, sx, ly);
+    }
+  }
+
+  ctx.textBaseline = 'alphabetic';
+  ctx.textAlign = 'left';
+
+  for (let y = visibleYStart; y <= yMax + gridStepY * 0.5; y += gridStepY) {
+    const sy = toScreenY(y);
+    if (sy < -1 || sy > h + 1) continue;
+
+    ctx.strokeStyle = Math.abs(y) < gridStepY * 0.5 ? 'rgba(255,255,255,0.50)' : 'rgba(148,163,184,0.18)';
+    ctx.lineWidth = Math.abs(y) < gridStepY * 0.5 ? 1.6 : 1;
+    ctx.beginPath();
+    ctx.moveTo(0, sy);
+    ctx.lineTo(w, sy);
+    ctx.stroke();
+
+    const label = formatAxisLabel(y, gridStepY);
+    if (label) {
+      const lx = 8;
+      const ly = sy - 2;
+      const metrics = ctx.measureText(label);
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.78)';
+      ctx.fillRect(lx - labelPad, ly - labelFontSize, metrics.width + labelPad * 2, labelFontSize + labelPad * 2);
+      ctx.fillStyle = 'rgba(226, 232, 240, 0.95)';
+      ctx.fillText(label, lx, ly);
+    }
+  }
+
+  const zeroX = toScreenX(0);
+  const zeroY = toScreenY(0);
+  if (zeroX >= 0 && zeroX <= w) {
+    ctx.strokeStyle = 'rgba(255,255,255,0.75)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(zeroX, 0);
+    ctx.lineTo(zeroX, h);
+    ctx.stroke();
+  }
+  if (zeroY >= 0 && zeroY <= h) {
+    ctx.strokeStyle = 'rgba(255,255,255,0.75)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(0, zeroY);
+    ctx.lineTo(w, zeroY);
+    ctx.stroke();
+  }
+
+  ctx.restore();
+}
 /**
  * Format a fractal-coordinate distance using SI prefixes so the label remains
  * readable at any zoom level (from km at low zoom down to qm at QD precision).
@@ -1606,10 +1743,18 @@ function drawMeasurements() {
 function redrawOverlays() {
   if (offscreen) {
     ctx.drawImage(offscreen, 0, 0);
+    drawAxisGrid();
     drawPath();
     drawOrbit();
     drawMeasurements();
   }
+}
+
+function toggleAxisGrid() {
+  axisGridVisible = !axisGridVisible;
+  const btn = document.getElementById('grid-btn');
+  if (btn) btn.classList.toggle('btn-active', axisGridVisible);
+  redrawOverlays();
 }
 
 function toggleMeasureMode() {
@@ -1911,6 +2056,7 @@ function initSettingsPanel() {
 
 function initToolbar() {
   document.getElementById('orbit-btn')?.addEventListener('click', toggleOrbitMode);
+  document.getElementById('grid-btn')?.addEventListener('click', toggleAxisGrid);
   document.getElementById('reset-btn')?.addEventListener('click', resetView);
   document.getElementById('julia-btn')?.addEventListener('click', toggleJulia);
   document.getElementById('screenshot-btn')?.addEventListener('click', saveScreenshot);
