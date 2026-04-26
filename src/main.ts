@@ -1958,7 +1958,7 @@ function initSettingsPanel() {
     multibrotInput.addEventListener('input', () => {
       const parsed = Number.parseFloat(multibrotInput.value);
       if (!Number.isFinite(parsed)) return;
-      view.multibrotPower = Math.min(16, Math.max(0.1, parsed));
+      view.multibrotPower = Math.min(500, Math.max(-16, parsed));
       if (view.isJulia) renderMiniMandelbrot();
       if (view.fractalType === 0) {
         orbitPoints = null;
