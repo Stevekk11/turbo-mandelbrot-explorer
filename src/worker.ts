@@ -108,14 +108,117 @@ function computeTileJS(
   }
 }
 
+// ─── Complex power helpers for perturbation rendering ─────────────────────────
+
+/**
+ * Compute z^d (positive integer d) in float64. Used for the perturbation step:
+ *   δ_{n+1} = (Z_n + δ_n)^d − Z_n^d + δc
+ */
+function complexF64PowInt(re: number, im: number, d: number): [number, number] {
+  if (d === 2) return [re * re - im * im, 2.0 * re * im];
+  if (d === 3) {
+    const re2 = re * re - im * im;
+    const im2 = 2.0 * re * im;
+    return [re * re2 - im * im2, re * im2 + im * re2];
+  }
+  if (d === 4) {
+    const re2 = re * re - im * im;
+    const im2 = 2.0 * re * im;
+    return [re2 * re2 - im2 * im2, 2.0 * re2 * im2];
+  }
+  // General positive integer: binary exponentiation
+  let rRe = 1.0, rIm = 0.0;
+  let bRe = re, bIm = im;
+  let n = d;
+  while (n > 0) {
+    if (n & 1) {
+      const t = rRe * bRe - rIm * bIm;
+      rIm = rRe * bIm + rIm * bRe;
+      rRe = t;
+    }
+    const t = bRe * bRe - bIm * bIm;
+    bIm = 2.0 * bRe * bIm;
+    bRe = t;
+    n >>= 1;
+  }
+  return [rRe, rIm];
+}
+
+/** Compute z^d (positive integer d) in DD. Used for the reference orbit. */
+function ddComplexPowInt(zRe: DD, zIm: DD, d: number): [DD, DD] {
+  if (d === 2) {
+    return [
+      ddSub(ddMul(zRe, zRe), ddMul(zIm, zIm)),
+      ddMulNum(ddMul(zRe, zIm), 2.0),
+    ];
+  }
+  // Binary exponentiation in DD
+  let resRe: DD = [1, 0];
+  let resIm: DD = [0, 0];
+  let baseRe: DD = zRe;
+  let baseIm: DD = zIm;
+  let n = d;
+  while (n > 0) {
+    if (n & 1) {
+      const newResRe = ddSub(ddMul(resRe, baseRe), ddMul(resIm, baseIm));
+      const newResIm = ddAdd(ddMul(resRe, baseIm), ddMul(resIm, baseRe));
+      resRe = newResRe;
+      resIm = newResIm;
+    }
+    const newBaseRe = ddSub(ddMul(baseRe, baseRe), ddMul(baseIm, baseIm));
+    const newBaseIm = ddMulNum(ddMul(baseRe, baseIm), 2.0);
+    baseRe = newBaseRe;
+    baseIm = newBaseIm;
+    n >>= 1;
+  }
+  return [resRe, resIm];
+}
+
+/** Compute z^d (positive integer d) in QD. Used for the QD reference orbit. */
+function qdComplexPowInt(zRe: QD, zIm: QD, d: number): [QD, QD] {
+  if (d === 2) {
+    return [
+      qdSub(qdMul(zRe, zRe), qdMul(zIm, zIm)),
+      qdMulNum(qdMul(zRe, zIm), 2.0),
+    ];
+  }
+  // Binary exponentiation in QD
+  let resRe: QD = [1, 0, 0, 0];
+  let resIm: QD = [0, 0, 0, 0];
+  let baseRe: QD = zRe;
+  let baseIm: QD = zIm;
+  let n = d;
+  while (n > 0) {
+    if (n & 1) {
+      const newResRe = qdSub(qdMul(resRe, baseRe), qdMul(resIm, baseIm));
+      const newResIm = qdAdd(qdMul(resRe, baseIm), qdMul(resIm, baseRe));
+      resRe = newResRe;
+      resIm = newResIm;
+    }
+    const newBaseRe = qdSub(qdMul(baseRe, baseRe), qdMul(baseIm, baseIm));
+    const newBaseIm = qdMulNum(qdMul(baseRe, baseIm), 2.0);
+    baseRe = newBaseRe;
+    baseIm = newBaseIm;
+    n >>= 1;
+  }
+  return [resRe, resIm];
+}
+
 // ─── Perturbation-theory renderer for deep-zoom tiles ─────────────────────────
 
+/**
+ * DD-precision perturbation renderer. Supports any positive integer `power`
+ * (default 2 for standard Mandelbrot). The reference orbit is iterated in
+ * double-double arithmetic; each pixel's delta is tracked in float64 using the
+ * exact perturbation formula δ_{n+1} = (Z_n + δ_n)^d − Z_n^d + δc.
+ */
 function computeTilePerturbation(
     xMinStr: string, yMinStr: string, xMaxStr: string, yMaxStr: string,
     width: number, height: number, maxIter: number,
     juliaReStr: string, juliaImStr: string, isJulia: boolean,
     refReStr: string, refImStr: string,
-    buf: Float32Array
+    buf: Float32Array,
+    power = 2
 ): void {
   const refRe = ddFromString(refReStr);
   const refIm = ddFromString(refImStr);
@@ -132,6 +235,8 @@ function computeTilePerturbation(
   orbitRe[0] = zRe[0];
   orbitIm[0] = zIm[0];
 
+  const logPow = Math.log(power);
+
   let refOrbitLen = 0;
   for (let n = 0; n < maxIter; n++) {
     const r2 = zRe[0] * zRe[0] + zIm[0] * zIm[0];
@@ -139,10 +244,9 @@ function computeTilePerturbation(
       refOrbitLen = n;
       break;
     }
-    const newZRe = ddAdd(ddSub(ddMul(zRe, zRe), ddMul(zIm, zIm)), cRe_dd);
-    const newZIm = ddAdd(ddMulNum(ddMul(zRe, zIm), 2.0), cIm_dd);
-    zRe = newZRe;
-    zIm = newZIm;
+    const [powRe, powIm] = ddComplexPowInt(zRe, zIm, power);
+    zRe = ddAdd(powRe, cRe_dd);
+    zIm = ddAdd(powIm, cIm_dd);
     refOrbitLen = n + 1;
     orbitRe[n + 1] = zRe[0];
     orbitIm[n + 1] = zIm[0];
@@ -181,12 +285,11 @@ function computeTilePerturbation(
         const ZnRe = orbitRe[n];
         const ZnIm = orbitIm[n];
 
-        const a = 2.0 * ZnRe + dRe;
-        const b = 2.0 * ZnIm + dIm;
-        const newDRe = a * dRe - b * dIm + loopDcRe;
-        const newDIm = a * dIm + b * dRe + loopDcIm;
-        dRe = newDRe;
-        dIm = newDIm;
+        // Exact perturbation: δ_{n+1} = (Z_n + δ_n)^d − Z_n^d + δc
+        const [totPowRe, totPowIm] = complexF64PowInt(ZnRe + dRe, ZnIm + dIm, power);
+        const [refPowRe, refPowIm] = complexF64PowInt(ZnRe, ZnIm, power);
+        dRe = totPowRe - refPowRe + loopDcRe;
+        dIm = totPowIm - refPowIm + loopDcIm;
         iter++;
 
         const zActRe = orbitRe[n + 1] + dRe;
@@ -195,7 +298,7 @@ function computeTilePerturbation(
 
         if (r2 > 100000.0) {
           const log_zn = Math.log(r2) * 0.5;
-          const nu = Math.log(log_zn / Math.LN2) / Math.LN2;
+          const nu = Math.log(log_zn / logPow) / logPow;
           val = iter + 1.0 - nu;
           break;
         }
@@ -223,13 +326,13 @@ function computeTilePerturbation(
           const y2 = zIm * zIm;
           if (x2 + y2 > 100000.0) {
             const log_zn = Math.log(x2 + y2) * 0.5;
-            const nu = Math.log(log_zn / Math.LN2) / Math.LN2;
+            const nu = Math.log(log_zn / logPow) / logPow;
             val = iter + 1.0 - nu;
             break;
           }
-          const newZIm = 2.0 * zRe * zIm + cPixelIm;
-          zRe = x2 - y2 + cPixelRe;
-          zIm = newZIm;
+          const [pRe, pIm] = complexF64PowInt(zRe, zIm, power);
+          zRe = pRe + cPixelRe;
+          zIm = pIm + cPixelIm;
           iter++;
         }
       }
@@ -239,12 +342,18 @@ function computeTilePerturbation(
   }
 }
 
+/**
+ * QD-precision perturbation renderer. Like computeTilePerturbation but uses
+ * quad-double arithmetic for the reference orbit, enabling zoom depths beyond
+ * ~10^31. Supports any positive integer `power` (default 2).
+ */
 function computeTilePerturbationQD(
     xMinStr: string, yMinStr: string, xMaxStr: string, yMaxStr: string,
     width: number, height: number, maxIter: number,
     juliaReStr: string, juliaImStr: string, isJulia: boolean,
     refReStr: string, refImStr: string,
-    buf: Float32Array
+    buf: Float32Array,
+    power = 2
 ): void {
   const refRe = qdFromString(refReStr);
   const refIm = qdFromString(refImStr);
@@ -260,6 +369,8 @@ function computeTilePerturbationQD(
   orbitRe[0] = qdHi(zRe);
   orbitIm[0] = qdHi(zIm);
 
+  const logPow = Math.log(power);
+
   let refOrbitLen = 0;
   for (let n = 0; n < maxIter; n++) {
     const zReHi = qdHi(zRe);
@@ -269,10 +380,9 @@ function computeTilePerturbationQD(
       refOrbitLen = n;
       break;
     }
-    const newZRe = qdAdd(qdSub(qdMul(zRe, zRe), qdMul(zIm, zIm)), cRe_qd);
-    const newZIm = qdAdd(qdMulNum(qdMul(zRe, zIm), 2.0), cIm_qd);
-    zRe = newZRe;
-    zIm = newZIm;
+    const [powRe, powIm] = qdComplexPowInt(zRe, zIm, power);
+    zRe = qdAdd(powRe, cRe_qd);
+    zIm = qdAdd(powIm, cIm_qd);
     refOrbitLen = n + 1;
     orbitRe[n + 1] = qdHi(zRe);
     orbitIm[n + 1] = qdHi(zIm);
@@ -311,12 +421,11 @@ function computeTilePerturbationQD(
         const ZnRe = orbitRe[n];
         const ZnIm = orbitIm[n];
 
-        const a = 2.0 * ZnRe + dRe;
-        const b = 2.0 * ZnIm + dIm;
-        const newDRe = a * dRe - b * dIm + loopDcRe;
-        const newDIm = a * dIm + b * dRe + loopDcIm;
-        dRe = newDRe;
-        dIm = newDIm;
+        // Exact perturbation: δ_{n+1} = (Z_n + δ_n)^d − Z_n^d + δc
+        const [totPowRe, totPowIm] = complexF64PowInt(ZnRe + dRe, ZnIm + dIm, power);
+        const [refPowRe, refPowIm] = complexF64PowInt(ZnRe, ZnIm, power);
+        dRe = totPowRe - refPowRe + loopDcRe;
+        dIm = totPowIm - refPowIm + loopDcIm;
         iter++;
 
         const zActRe = orbitRe[n + 1] + dRe;
@@ -325,7 +434,7 @@ function computeTilePerturbationQD(
 
         if (r2 > 100000.0) {
           const log_zn = Math.log(r2) * 0.5;
-          const nu = Math.log(log_zn / Math.LN2) / Math.LN2;
+          const nu = Math.log(log_zn / logPow) / logPow;
           val = iter + 1.0 - nu;
           break;
         }
@@ -354,13 +463,13 @@ function computeTilePerturbationQD(
           const r2 = x2 + y2;
           if (r2 > 100000.0) {
             const log_zn = Math.log(r2) * 0.5;
-            const nu = Math.log(log_zn / Math.LN2) / Math.LN2;
+            const nu = Math.log(log_zn / logPow) / logPow;
             val = iter + 1.0 - nu;
             break;
           }
-          const newZIm = 2.0 * zRe * zIm + cPixelIm;
-          zRe = x2 - y2 + cPixelRe;
-          zIm = newZIm;
+          const [pRe, pIm] = complexF64PowInt(zRe, zIm, power);
+          zRe = pRe + cPixelRe;
+          zIm = pIm + cPixelIm;
           iter++;
         }
       }
@@ -454,8 +563,10 @@ function renderTile(task: RenderTask): ArrayBuffer {
   const dxCheck = xMaxHi - xMinHi;
   const inferredTier = !Number.isFinite(dxCheck) ? 'qd' : (Math.abs(dxCheck) < 1e-28 ? 'qd' : (Math.abs(dxCheck) < 2e-13 ? 'dd' : 'wasm'));
   const baseTier = task.precisionTier ?? inferredTier;
-  const requiresGeneralFormula = fractalType !== 0 || Math.abs(multibrotPower - 2.0) > 1e-12;
-  const precisionTier = requiresGeneralFormula && baseTier !== 'wasm' ? 'wasm' : baseTier;
+  // Perturbation theory supports fractalType=0 with any positive integer power ≥ 2.
+  // Non-integer powers, negative powers, and other fractal types use WASM only.
+  const supportsDeepZoom = fractalType === 0 && Number.isInteger(multibrotPower) && multibrotPower >= 2;
+  const precisionTier = !supportsDeepZoom && baseTier !== 'wasm' ? 'wasm' : baseTier;
 
   let iterBuf: Float32Array;
 
@@ -496,7 +607,8 @@ function renderTile(task: RenderTask): ArrayBuffer {
         tileW, tileH, maxIter,
         juliaRe, juliaIm, isJulia,
         refRe, refIm,
-        _jsBuf
+        _jsBuf,
+        multibrotPower
     );
     iterBuf = _jsBuf;
   } else {
@@ -511,7 +623,8 @@ function renderTile(task: RenderTask): ArrayBuffer {
         tileW, tileH, maxIter,
         juliaRe, juliaIm, isJulia,
         refRe, refIm,
-        _jsBuf
+        _jsBuf,
+        multibrotPower
     );
     iterBuf = _jsBuf;
   }
