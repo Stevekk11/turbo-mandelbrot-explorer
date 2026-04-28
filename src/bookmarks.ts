@@ -19,6 +19,15 @@ export function createBookmarks(options: {
         return [];
     }
 
+    function escapeHtml(unsafe: string) {
+        return unsafe
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
+    }
+
     function renderBookmarks() {
         const container = document.getElementById('bookmark-list');
         if (!container) return;
@@ -30,7 +39,7 @@ export function createBookmarks(options: {
       <div class="flex items-center gap-1">
         <button
           class="flex-1 text-left text-xs px-2 py-1 rounded bg-gray-700 hover:bg-gray-600 text-gray-200 truncate"
-          data-bm="${i}">${bm.label}
+          data-bm="${i}">${escapeHtml(bm.label)}
         </button>
         ${i >= builtInBookmarks.length
             ? `<button class="text-red-400 hover:text-red-300 px-1 del-bm" data-bm="${i - builtInBookmarks.length}">×</button>`

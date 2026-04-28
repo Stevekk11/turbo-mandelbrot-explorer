@@ -133,7 +133,7 @@ export function createRenderer(options: {
         return [fx, fy];
     }
 
-    function updateZoom() {
+    function updateZoom(overrideIter = true) {
         const view = options.getView();
         const dXMin = qdFromString(view.xMin);
         const dXMax = qdFromString(view.xMax);
@@ -145,7 +145,7 @@ export function createRenderer(options: {
         const autoIter = 256 + 256 * Math.log10(Math.max(1, z));
         const clampedIter = Math.min(10000, Math.max(32, autoIter));
         const steppedIter = Math.floor(clampedIter / 32) * 32;
-        if (view.maxIter !== steppedIter) {
+        if (overrideIter && view.maxIter !== steppedIter) {
             view.maxIter = steppedIter;
             options.onViewChange(view);
             options.onAutoIterChange();

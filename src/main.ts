@@ -90,7 +90,7 @@ const bookmarks = createBookmarks({
       fractalType: bookmark.fractalType ?? DEFAULT_VIEW.fractalType,
       multibrotPower: bookmark.multibrotPower ?? DEFAULT_VIEW.multibrotPower,
     };
-    renderer.updateZoom();
+    renderer.updateZoom(false);
     ui.updateIterDisplay();
     ui.updatePaletteUI();
     ui.updateFractalTypeUI();
