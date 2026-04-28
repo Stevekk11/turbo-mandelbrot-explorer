@@ -34,6 +34,21 @@ export function createOverlays(options: {
         return {x, y};
     }
 
+    function fractalToScreenPointQD(re: QD, im: QD): { x: number; y: number } {
+        const view = options.getView();
+        const dXMin = qdFromString(view.xMin);
+        const dXMax = qdFromString(view.xMax);
+        const dYMin = qdFromString(view.yMin);
+        const dYMax = qdFromString(view.yMax);
+        const dxNum = qdHi(qdSub(re, dXMin));
+        const dyNum = qdHi(qdSub(im, dYMin));
+        const xRangeNum = qdHi(qdSub(dXMax, dXMin));
+        const yRangeNum = qdHi(qdSub(dYMax, dYMin));
+        const x = (dxNum / xRangeNum) * options.canvas.width;
+        const y = (dyNum / yRangeNum) * options.canvas.height;
+        return {x, y};
+    }
+
     function drawPath() {
         const view = options.getView();
         if (!pathPoints || view.isJulia) return;
@@ -258,7 +273,7 @@ export function createOverlays(options: {
     function drawMeasurements() {
         if (!measureMode || measurePoints.length === 0) return;
 
-        const pts = measurePoints.map((p) => fractalToScreenPoint(qdHi(p.re), qdHi(p.im)));
+        const pts = measurePoints.map((p) => fractalToScreenPointQD(p.re, p.im));
 
         options.ctx.save();
 
