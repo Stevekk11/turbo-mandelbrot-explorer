@@ -285,11 +285,57 @@ function computeTilePerturbation(
         const ZnRe = orbitRe[n];
         const ZnIm = orbitIm[n];
 
-        // Exact perturbation: δ_{n+1} = (Z_n + δ_n)^d − Z_n^d + δc
-        const [totPowRe, totPowIm] = complexF64PowInt(ZnRe + dRe, ZnIm + dIm, power);
-        const [refPowRe, refPowIm] = complexF64PowInt(ZnRe, ZnIm, power);
-        dRe = totPowRe - refPowRe + loopDcRe;
-        dIm = totPowIm - refPowIm + loopDcIm;
+        let nextDRe = 0.0;
+        let nextDIm = 0.0;
+
+        if (power === 2) {
+          const t1Re = 2.0 * (ZnRe * dRe - ZnIm * dIm);
+          const t1Im = 2.0 * (ZnRe * dIm + ZnIm * dRe);
+          const t2Re = dRe * dRe - dIm * dIm;
+          const t2Im = 2.0 * dRe * dIm;
+          nextDRe = t1Re + t2Re + loopDcRe;
+          nextDIm = t1Im + t2Im + loopDcIm;
+        } else if (power === 3) {
+          const Z2Re = ZnRe * ZnRe - ZnIm * ZnIm;
+          const Z2Im = 2.0 * ZnRe * ZnIm;
+          const d2Re = dRe * dRe - dIm * dIm;
+          const d2Im = 2.0 * dRe * dIm;
+          const t1Re = 3.0 * (Z2Re * dRe - Z2Im * dIm);
+          const t1Im = 3.0 * (Z2Re * dIm + Z2Im * dRe);
+          const t2Re = 3.0 * (ZnRe * d2Re - ZnIm * d2Im);
+          const t2Im = 3.0 * (ZnRe * d2Im + ZnIm * d2Re);
+          const d3Re = d2Re * dRe - d2Im * dIm;
+          const d3Im = d2Re * dIm + d2Im * dRe;
+          nextDRe = t1Re + t2Re + d3Re + loopDcRe;
+          nextDIm = t1Im + t2Im + d3Im + loopDcIm;
+        } else if (power === 4) {
+          const Z2Re = ZnRe * ZnRe - ZnIm * ZnIm;
+          const Z2Im = 2.0 * ZnRe * ZnIm;
+          const Z3Re = Z2Re * ZnRe - Z2Im * ZnIm;
+          const Z3Im = Z2Re * ZnIm + Z2Im * ZnRe;
+          const d2Re = dRe * dRe - dIm * dIm;
+          const d2Im = 2.0 * dRe * dIm;
+          const d3Re = d2Re * dRe - d2Im * dIm;
+          const d3Im = d2Re * dIm + d2Im * dRe;
+          const d4Re = d2Re * d2Re - d2Im * d2Im;
+          const d4Im = 2.0 * d2Re * d2Im;
+          const t1Re = 4.0 * (Z3Re * dRe - Z3Im * dIm);
+          const t1Im = 4.0 * (Z3Re * dIm + Z3Im * dRe);
+          const t2Re = 6.0 * (Z2Re * d2Re - Z2Im * d2Im);
+          const t2Im = 6.0 * (Z2Re * d2Im + Z2Im * d2Re);
+          const t3Re = 4.0 * (ZnRe * d3Re - ZnIm * d3Im);
+          const t3Im = 4.0 * (ZnRe * d3Im + ZnIm * d3Re);
+          nextDRe = t1Re + t2Re + t3Re + d4Re + loopDcRe;
+          nextDIm = t1Im + t2Im + t3Im + d4Im + loopDcIm;
+        } else {
+          const [totPowRe, totPowIm] = complexF64PowInt(ZnRe + dRe, ZnIm + dIm, power);
+          const [refPowRe, refPowIm] = complexF64PowInt(ZnRe, ZnIm, power);
+          nextDRe = totPowRe - refPowRe + loopDcRe;
+          nextDIm = totPowIm - refPowIm + loopDcIm;
+        }
+
+        dRe = nextDRe;
+        dIm = nextDIm;
         iter++;
 
         const zActRe = orbitRe[n + 1] + dRe;
@@ -421,11 +467,57 @@ function computeTilePerturbationQD(
         const ZnRe = orbitRe[n];
         const ZnIm = orbitIm[n];
 
-        // Exact perturbation: δ_{n+1} = (Z_n + δ_n)^d − Z_n^d + δc
-        const [totPowRe, totPowIm] = complexF64PowInt(ZnRe + dRe, ZnIm + dIm, power);
-        const [refPowRe, refPowIm] = complexF64PowInt(ZnRe, ZnIm, power);
-        dRe = totPowRe - refPowRe + loopDcRe;
-        dIm = totPowIm - refPowIm + loopDcIm;
+        let nextDRe = 0.0;
+        let nextDIm = 0.0;
+
+        if (power === 2) {
+          const t1Re = 2.0 * (ZnRe * dRe - ZnIm * dIm);
+          const t1Im = 2.0 * (ZnRe * dIm + ZnIm * dRe);
+          const t2Re = dRe * dRe - dIm * dIm;
+          const t2Im = 2.0 * dRe * dIm;
+          nextDRe = t1Re + t2Re + loopDcRe;
+          nextDIm = t1Im + t2Im + loopDcIm;
+        } else if (power === 3) {
+          const Z2Re = ZnRe * ZnRe - ZnIm * ZnIm;
+          const Z2Im = 2.0 * ZnRe * ZnIm;
+          const d2Re = dRe * dRe - dIm * dIm;
+          const d2Im = 2.0 * dRe * dIm;
+          const t1Re = 3.0 * (Z2Re * dRe - Z2Im * dIm);
+          const t1Im = 3.0 * (Z2Re * dIm + Z2Im * dRe);
+          const t2Re = 3.0 * (ZnRe * d2Re - ZnIm * d2Im);
+          const t2Im = 3.0 * (ZnRe * d2Im + ZnIm * d2Re);
+          const d3Re = d2Re * dRe - d2Im * dIm;
+          const d3Im = d2Re * dIm + d2Im * dRe;
+          nextDRe = t1Re + t2Re + d3Re + loopDcRe;
+          nextDIm = t1Im + t2Im + d3Im + loopDcIm;
+        } else if (power === 4) {
+          const Z2Re = ZnRe * ZnRe - ZnIm * ZnIm;
+          const Z2Im = 2.0 * ZnRe * ZnIm;
+          const Z3Re = Z2Re * ZnRe - Z2Im * ZnIm;
+          const Z3Im = Z2Re * ZnIm + Z2Im * ZnRe;
+          const d2Re = dRe * dRe - dIm * dIm;
+          const d2Im = 2.0 * dRe * dIm;
+          const d3Re = d2Re * dRe - d2Im * dIm;
+          const d3Im = d2Re * dIm + d2Im * dRe;
+          const d4Re = d2Re * d2Re - d2Im * d2Im;
+          const d4Im = 2.0 * d2Re * d2Im;
+          const t1Re = 4.0 * (Z3Re * dRe - Z3Im * dIm);
+          const t1Im = 4.0 * (Z3Re * dIm + Z3Im * dRe);
+          const t2Re = 6.0 * (Z2Re * d2Re - Z2Im * d2Im);
+          const t2Im = 6.0 * (Z2Re * d2Im + Z2Im * d2Re);
+          const t3Re = 4.0 * (ZnRe * d3Re - ZnIm * d3Im);
+          const t3Im = 4.0 * (ZnRe * d3Im + ZnIm * d3Re);
+          nextDRe = t1Re + t2Re + t3Re + d4Re + loopDcRe;
+          nextDIm = t1Im + t2Im + t3Im + d4Im + loopDcIm;
+        } else {
+          const [totPowRe, totPowIm] = complexF64PowInt(ZnRe + dRe, ZnIm + dIm, power);
+          const [refPowRe, refPowIm] = complexF64PowInt(ZnRe, ZnIm, power);
+          nextDRe = totPowRe - refPowRe + loopDcRe;
+          nextDIm = totPowIm - refPowIm + loopDcIm;
+        }
+
+        dRe = nextDRe;
+        dIm = nextDIm;
         iter++;
 
         const zActRe = orbitRe[n + 1] + dRe;
