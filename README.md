@@ -19,4 +19,4 @@ npm run build
 
 Demo: https://stevekk11.github.io/turbo-mandelbrot-explorer/
 
-Pozor: aplikace používá dynamické a někdy blikající barvy.
+Varování pro epileptiky:⚠️ aplikace obsahuje někdy blikající barvy.⚠️
