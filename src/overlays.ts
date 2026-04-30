@@ -1,5 +1,5 @@
 import type {QD} from './qd';
-import {qdAdd, qdDiv, qdFromString, qdHi, qdMul, qdSub, qdToNumber} from './qd';
+import {qdAdd, qdDiv, qdDivNum, qdFromNum, qdFromString, qdHi, qdMul, qdSub, qdToNumber} from './qd';
 import type {ViewState} from './types';
 import {buildEscapeGuidedPath, computeOrbitPoints} from './fractalMath';
 
@@ -23,53 +23,35 @@ export function createOverlays(options: {
     let measurePoints: QDPoint[] = [];
     let orbitModeActive = false;
 
-    function fractalToScreenPoint(re: number, im: number): { x: number; y: number } {
-        const view = options.getView();
-        const xMinNum = qdHi(qdFromString(view.xMin));
-        const xMaxNum = qdHi(qdFromString(view.xMax));
-        const yMinNum = qdHi(qdFromString(view.yMin));
-        const yMaxNum = qdHi(qdFromString(view.yMax));
-        const x = (re - xMinNum) / (xMaxNum - xMinNum) * options.canvas.width;
-        const y = (im - yMinNum) / (yMaxNum - yMinNum) * options.canvas.height;
-        return {x, y};
-    }
-
-    function fractalToScreenPointQD(re: QD, im: QD): { x: number; y: number } {
+    // Transformace počítaná v QD přesnosti, aby neselhala při extrémním zoomu
+    function fractalToScreenPoint(re: QD, im: QD): { x: number; y: number } {
         const view = options.getView();
         const dXMin = qdFromString(view.xMin);
         const dXMax = qdFromString(view.xMax);
         const dYMin = qdFromString(view.yMin);
         const dYMax = qdFromString(view.yMax);
+
         const xRange = qdSub(dXMax, dXMin);
         const yRange = qdSub(dYMax, dYMin);
-        const dx = qdSub(re, dXMin);
-        const dy = qdSub(im, dYMin);
-        const xNorm = qdToNumber(qdDiv(dx, xRange));
-        const yNorm = qdToNumber(qdDiv(dy, yRange));
-        const x = (Number.isFinite(xNorm) ? xNorm : 0) * options.canvas.width;
-        const y = (Number.isFinite(yNorm) ? yNorm : 0) * options.canvas.height;
-        return {x, y};
+
+        const xRatio = qdDiv(qdSub(re, dXMin), xRange);
+        const yRatio = qdDiv(qdSub(im, dYMin), yRange);
+
+        return {
+            x: qdToNumber(xRatio) * options.canvas.width,
+            y: qdToNumber(yRatio) * options.canvas.height
+        };
     }
 
     function drawPath() {
         const view = options.getView();
         if (!pathPoints || view.isJulia) return;
-        const dXMin = qdFromString(view.xMin);
-        const dXMax = qdFromString(view.xMax);
-        const dYMin = qdFromString(view.yMin);
-        const dYMax = qdFromString(view.yMax);
-        const xRange = qdSub(dXMax, dXMin);
-        const yRange = qdSub(dYMax, dYMin);
-        const w = options.canvas.width;
-        const h = options.canvas.height;
-        const xMinNum = qdHi(dXMin);
-        const xRangeNum = qdHi(xRange);
-        const yMinNum = qdHi(dYMin);
-        const yRangeNum = qdHi(yRange);
-        const screenPath = pathPoints.map((p) => ({
-            x: (p.re - xMinNum) / xRangeNum * w,
-            y: (p.im - yMinNum) / yRangeNum * h,
-        }));
+
+        // Převedeme number z pathPoints na QD a spočítáme pozici
+        const screenPath = pathPoints.map((p) =>
+            fractalToScreenPoint(qdFromNum(p.re), qdFromNum(p.im))
+        );
+
         options.ctx.save();
         options.ctx.strokeStyle = 'red';
         options.ctx.lineWidth = 10;
@@ -85,7 +67,11 @@ export function createOverlays(options: {
     function drawOrbit() {
         if (!orbitPoints) return;
 
-        const screenOrbit = orbitPoints.map((p) => fractalToScreenPoint(p.re, p.im));
+        // Převedeme number z orbitPoints na QD a spočítáme pozici
+        const screenOrbit = orbitPoints.map((p) =>
+            fractalToScreenPoint(qdFromNum(p.re), qdFromNum(p.im))
+        );
+
         if (screenOrbit.length === 0) return;
 
         options.ctx.save();
@@ -146,6 +132,8 @@ export function createOverlays(options: {
         const dYMin = qdFromString(view.yMin);
         const dYMax = qdFromString(view.yMax);
 
+        // Grid necháváme na klasickém number, pro vizuální vodítka to stačí.
+        // Pokud by úplně zmizel při maximálním zoomu, mřížka se prostě nevykreslí.
         const xMin = qdHi(dXMin);
         const xMax = qdHi(dXMax);
         const yMin = qdHi(dYMin);
@@ -175,18 +163,12 @@ export function createOverlays(options: {
         const visibleXStart = Math.ceil(xMin / gridStepX) * gridStepX;
         const visibleYStart = Math.ceil(yMin / gridStepY) * gridStepY;
 
-        // Zamrznutí / infinite loop prevence při obřím zoomu vlivem ztráty přesnosti float64
-        if (visibleXStart + gridStepX === visibleXStart || visibleYStart + gridStepY === visibleYStart) {
-            options.ctx.restore();
-            return;
-        }
-
         for (let x = visibleXStart; x <= xMax + gridStepX * 0.5; x += gridStepX) {
             const sx = toScreenX(x);
             if (sx < -1 || sx > w + 1) continue;
 
-            options.ctx.strokeStyle = Math.abs(x) < gridStepX * 0.5 ? 'rgba(255,255,255,0.50)' : 'rgba(255,0,85,0.50)';
-            options.ctx.lineWidth = Math.abs(x) < gridStepX * 0.5 ? 3 : 2.1;
+            options.ctx.strokeStyle = Math.abs(x) < gridStepX * 0.5 ? 'rgba(255,255,255,0.50)' : 'rgba(148,163,184,0.18)';
+            options.ctx.lineWidth = Math.abs(x) < gridStepX * 0.5 ? 2.1 : 1.4;
             options.ctx.beginPath();
             options.ctx.moveTo(sx, 0);
             options.ctx.lineTo(sx, h);
@@ -210,7 +192,7 @@ export function createOverlays(options: {
             const sy = toScreenY(y);
             if (sy < -1 || sy > h + 1) continue;
 
-            options.ctx.strokeStyle = Math.abs(y) < gridStepY * 0.5 ? 'rgba(255,255,255,0.50)' : 'rgba(255, 0, 85, 0.50)';
+            options.ctx.strokeStyle = Math.abs(y) < gridStepY * 0.5 ? 'rgba(255,255,255,0.50)' : 'rgba(148,163,184,0.18)';
             options.ctx.lineWidth = Math.abs(y) < gridStepY * 0.5 ? 2.1 : 1.4;
             options.ctx.beginPath();
             options.ctx.moveTo(0, sy);
@@ -251,9 +233,11 @@ export function createOverlays(options: {
         options.ctx.restore();
     }
 
-    function formatDistance(d: number): string {
-        if (!isFinite(d) || d < 0) return '—';
-        if (d === 0) return '0 m';
+    function formatDistance(d: QD): string {
+        const dNum = qdToNumber(d);
+        if (!Number.isFinite(dNum) || dNum < 0) return '—';
+        if (dNum === 0) return '0 m';
+
         const prefixes: [number, string][] = [
             [1e3, 'km'],
             [1, 'm'],
@@ -270,18 +254,20 @@ export function createOverlays(options: {
         ];
 
         for (const [scale, unit] of prefixes) {
-            if (d >= scale) {
-                return `${(d / scale).toFixed(3)} ${unit}`;
+            if (dNum >= scale) {
+                const scaled = qdDivNum(d, scale);
+                return `${qdToNumber(scaled).toFixed(3)} ${unit}`;
             }
         }
 
-        return `${d.toExponential(3)} m`;
+        return `${dNum.toExponential(3)} m`;
     }
 
     function drawMeasurements() {
         if (!measureMode || measurePoints.length === 0) return;
 
-        const pts = measurePoints.map((p) => fractalToScreenPointQD(p.re, p.im));
+        // Využití QD transformace pro souřadnice
+        const pts = measurePoints.map((p) => fractalToScreenPoint(p.re, p.im));
 
         options.ctx.save();
 
@@ -304,11 +290,15 @@ export function createOverlays(options: {
         }
 
         if (measurePoints.length >= 2) {
-            let total = 0;
+            let total = qdFromNum(0);
             for (let i = 1; i < measurePoints.length; i++) {
                 const dx = qdSub(measurePoints[i].re, measurePoints[i - 1].re);
                 const dy = qdSub(measurePoints[i].im, measurePoints[i - 1].im);
-                total += Math.sqrt(qdToNumber(qdAdd(qdMul(dx, dx), qdMul(dy, dy))));
+
+                const distSq = qdAdd(qdMul(dx, dx), qdMul(dy, dy));
+                const dist = qdFromNum(Math.sqrt(qdToNumber(distSq)));
+
+                total = qdAdd(total, dist);
             }
             const label = formatDistance(total);
 
