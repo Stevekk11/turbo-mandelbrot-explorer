@@ -42,7 +42,8 @@ export function createBookmarks(options: {
           data-bm="${i}">${escapeHtml(bm.label)}
         </button>
         ${i >= builtInBookmarks.length
-            ? `<button class="text-red-400 hover:text-red-300 px-1 del-bm" data-bm="${i - builtInBookmarks.length}">×</button>`
+            ? `<button class="text-blue-400 hover:text-blue-300 px-1 ren-bm" data-bm="${i - builtInBookmarks.length}" title="Rename">✎</button>
+               <button class="text-red-400 hover:text-red-300 px-1 del-bm" data-bm="${i - builtInBookmarks.length}" title="Delete">×</button>`
             : ''}
       </div>
     `).join('');
@@ -60,6 +61,21 @@ export function createBookmarks(options: {
                 return;
             }
 
+            if (btn.classList.contains('ren-bm')) {
+                btn.addEventListener('click', () => {
+                    const idx = parseInt(btn.dataset.bm ?? '-1', 10);
+                    if (idx < 0) return;
+                    const bookmarks = loadBookmarks();
+                    const newLabel = prompt('Rename bookmark:', bookmarks[idx].label);
+                    if (newLabel && newLabel.trim() !== '') {
+                        bookmarks[idx].label = newLabel.trim();
+                        localStorage.setItem(STORAGE_KEY, JSON.stringify(bookmarks));
+                        renderBookmarks();
+                    }
+                });
+                return;
+            }
+
             btn.addEventListener('click', () => {
                 const idx = parseInt(btn.dataset.bm ?? '-1', 10);
                 if (idx < 0) return;
@@ -70,11 +86,28 @@ export function createBookmarks(options: {
 
     function saveBookmark() {
         const view = options.getView();
-        const label = prompt('Bookmark name:', `Zoom ${Number(view.zoom).toExponential(2)}×`);
+        
+        let zStr: string;
+        const z = Number(view.zoom);
+        if (z < 1000) zStr = `${z.toFixed(1)}×`;
+        else if (z < 1e6) zStr = `${(z / 1000).toFixed(2)}K×`;
+        else if (z < 1e9) zStr = `${(z / 1e6).toFixed(2)}M×`;
+        else if (z < 1e12) zStr = `${(z / 1e9).toFixed(2)}G×`;
+        else zStr = `${z.toExponential(2)}×`;
+
+        const bookmarks = loadBookmarks();
+
+        let defaultLabel = `Zoom ${zStr}`;
+        let suffix = 1;
+        while (bookmarks.some(b => b.label === defaultLabel) || builtInBookmarks.some(b => b.label === defaultLabel)) {
+            suffix++;
+            defaultLabel = `Zoom ${zStr} (${suffix})`;
+        }
+
+        const label = prompt('Bookmark name:', defaultLabel);
         if (!label) return;
 
-        const bookmark: Bookmark = {label, ...view};
-        const bookmarks = loadBookmarks();
+        const bookmark: Bookmark = {...view, label};
         bookmarks.push(bookmark);
         localStorage.setItem(STORAGE_KEY, JSON.stringify(bookmarks));
         renderBookmarks();
