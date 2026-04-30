@@ -1,7 +1,7 @@
 import type {QD} from './qd';
 import {qdAdd, qdDiv, qdDivNum, qdFromNum, qdFromString, qdHi, qdMul, qdSub, qdToNumber} from './qd';
 import type {ViewState} from './types';
-import {buildEscapeGuidedPath, computeOrbitPoints} from './fractalMath';
+import {computeOrbitPoints} from './fractalMath';
 
 interface QDPoint {
     re: QD;
@@ -380,20 +380,6 @@ export function createOverlays(options: {
         hasPath: () => pathPoints !== null,
         isMeasureMode: () => measureMode,
         isOrbitModeActive: () => orbitModeActive,
-        placePathAtClientPoint(clientX: number, clientY: number) {
-            if (options.getView().isJulia) return;
-            const dpr = window.devicePixelRatio || 1;
-            const [fx, fy] = options.screenToFractal(clientX * dpr, clientY * dpr);
-            const start = {re: fx[0], im: fy[0]};
-            const end = {re: -0.5, im: 0};
-
-            pathPoints = buildEscapeGuidedPath(start, end, {
-                view: options.getView(),
-                canvasWidth: options.canvas.width,
-                canvasHeight: options.canvas.height,
-            });
-            redraw();
-        },
         redraw,
         showOrbitAtClientPoint(clientX: number, clientY: number) {
             const dpr = window.devicePixelRatio || 1;

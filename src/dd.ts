@@ -37,9 +37,6 @@ function twoProd(a: number, b: number): DD {
 
 // ─── Public DD arithmetic API ─────────────────────────────────────────────────
 
-/** Create a DD from a regular float64. */
-export function ddFromNum(v: number): DD { return [v, 0]; }
-
 /** DD + DD */
 export function ddAdd(a: DD, b: DD): DD {
   const [s, se] = twoSum(a[0], b[0]);
@@ -69,13 +66,6 @@ export function ddDivNum(a: DD, b: number): DD {
   const q = a[0] / b;
   const [ph, pe] = twoProd(q, b);
   return twoSum(q, (a[0] - ph - pe + a[1]) / b);
-}
-
-/** DD ÷ DD */
-export function ddDiv(a: DD, b: DD): DD {
-  const q1 = a[0] / b[0];
-  const r = ddSub(a, ddMulNum(b, q1));
-  return twoSum(q1, r[0] / b[0]);
 }
 
 // ─── String serialisation ─────────────────────────────────────────────────────
@@ -142,15 +132,3 @@ export function ddFromString(s: string): DD {
   return neg ? [-hi, -lo] : [hi, lo];
 }
 
-/**
- * Serialise a DD number to a "hi|lo" string for exact round-trip parsing.
- * Falls back to a plain number string when lo === 0 (stays backward-compatible
- * with simple values like the default view coordinates).
- */
-export function ddToString(a: DD): string {
-  if (a[1] === 0) return String(a[0]);
-  return `${a[0]}|${a[1]}`;
-}
-
-/** Return the float64 high component (the best single-float approximation). */
-export function ddHi(a: DD): number { return a[0]; }

@@ -22,7 +22,6 @@ export function createInteractions(options: {
         clearMeasurements: () => void;
         hasPath: () => boolean;
         clearPath: () => void;
-        placePathAtClientPoint: (x: number, y: number) => void;
     };
     onCancelRenderDuringDrag: () => void;
     updateIterDisplay: () => void;
@@ -282,7 +281,6 @@ export function createInteractions(options: {
                         isDragging = false;
                         panSource = null;
                         if (overlays.hasPath()) overlays.clearPath();
-                        else overlays.placePathAtClientPoint(touch.clientX, touch.clientY);
                         return;
                     }
                 }
@@ -299,10 +297,6 @@ export function createInteractions(options: {
             lastTouchDist = 0;
         }, {passive: false});
 
-        canvas.addEventListener('dblclick', (e) => {
-            if (!pathDrawingMode) return;
-            options.getOverlayState().placePathAtClientPoint(e.clientX, e.clientY);
-        });
 
         canvas.addEventListener('contextmenu', (e) => {
             const overlays = options.getOverlayState();
