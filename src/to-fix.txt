@@ -1,0 +1,1 @@
+- Coordinate snapping at zooms when QD kicks causes jumps when zooming in - fix precision loss

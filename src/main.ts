@@ -55,7 +55,7 @@ const renderer = createRenderer({
     if (zoomEl) zoomEl.textContent = label;
   },
   onPrecisionTierChange: (tier) => {
-    if (precisionTierHintEl) precisionTierHintEl.textContent = `p: ${tier.toUpperCase()}`;
+    if (precisionTierHintEl) precisionTierHintEl.textContent = `prec: ${tier.toUpperCase()}`;
   },
 });
 

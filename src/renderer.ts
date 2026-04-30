@@ -3,7 +3,7 @@ import type {QD} from './qd';
 import {qdAdd, qdDiv, qdDivNum, qdFromString, qdHi, qdMulNum, qdSub, qdToString,} from './qd';
 
 const NUM_WORKERS = Math.max(2, Math.min(16, navigator.hardwareConcurrency ?? 4));
-const TILE_SIZE = 256;
+const TILE_SIZE = 128;
 
 interface PendingTask {
     task: RenderTask;
@@ -45,8 +45,8 @@ export function createRenderer(options: {
 
     function getPrecisionTier(xRange: QD): PrecisionTier {
         const dx = Math.abs(qdHi(xRange));
-        if (!Number.isFinite(dx) || dx < 1e-28) return 'qd';
-        if (dx < 2e-13) return 'dd';
+        if (!Number.isFinite(dx) || dx < 1e-29) return 'qd';
+        if (dx < 1e-13) return 'dd';
         return 'wasm';
     }
 
