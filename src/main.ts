@@ -24,6 +24,7 @@ const DEFAULT_VIEW: ViewState = {
   shadows: false,
   fractalType: 0,
   multibrotPower: 2.0,
+  tileSize: 256,
 };
 
 const canvas = document.getElementById('fractal-canvas') as HTMLCanvasElement;
@@ -89,6 +90,7 @@ const bookmarks = createBookmarks({
       ...bookmark,
       fractalType: bookmark.fractalType ?? DEFAULT_VIEW.fractalType,
       multibrotPower: bookmark.multibrotPower ?? DEFAULT_VIEW.multibrotPower,
+      tileSize: bookmark.tileSize ?? DEFAULT_VIEW.tileSize,
     };
     renderer.updateZoom(false);
     ui.updateIterDisplay();

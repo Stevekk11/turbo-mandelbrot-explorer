@@ -30,6 +30,8 @@ export interface ViewState {
   fractalType: number;
   /** Real exponent d for Multibrot (used with fractalType=0) */
   multibrotPower: number;
+  /** Tile size for rendering */
+  tileSize: number;
 }
 
 /** Message sent to a worker requesting tile rendering */
@@ -156,6 +158,7 @@ export interface Bookmark {
   juliaIm: string;
   fractalType?: number;
   multibrotPower?: number;
+  tileSize?: number;
 }
 
 /** Precision tiers for rendering paths */

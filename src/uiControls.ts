@@ -296,6 +296,17 @@ export function createUiControls(options: {
             }
         });
 
+        const tileSizeSelect = document.getElementById('tile-size-select') as HTMLSelectElement | null;
+        if (tileSizeSelect) {
+            tileSizeSelect.value = String(view.tileSize);
+            tileSizeSelect.addEventListener('change', () => {
+                const nextView = options.getView();
+                nextView.tileSize = parseInt(tileSizeSelect.value, 10);
+                options.setView(nextView);
+                options.scheduleRender();
+            });
+        }
+
         document.querySelectorAll<HTMLButtonElement>('.julia-preset').forEach((btn) => {
             btn.addEventListener('click', () => {
                 const re = parseFloat(btn.dataset.re ?? '0');

@@ -3,7 +3,7 @@ import type {QD} from './qd';
 import {qdAdd, qdDiv, qdDivNum, qdFromString, qdHi, qdMulNum, qdSub, qdToString,} from './qd';
 
 const NUM_WORKERS = Math.max(2, Math.min(16, navigator.hardwareConcurrency ?? 4));
-const TILE_SIZE = 128;
+let TILE_SIZE = 256;
 
 interface PendingTask {
     task: RenderTask;
@@ -174,6 +174,7 @@ export function createRenderer(options: {
 
         const cw = options.canvas.width;
         const ch = options.canvas.height;
+        TILE_SIZE = view.tileSize;
         const cols = Math.ceil(cw / TILE_SIZE);
         const rows = Math.ceil(ch / TILE_SIZE);
         totalTiles = cols * rows;
@@ -308,6 +309,7 @@ export function createRenderer(options: {
 
         const cw = options.canvas.width;
         const ch = options.canvas.height;
+        TILE_SIZE = view.tileSize;
         const cols = Math.ceil(cw / TILE_SIZE);
         const rows = Math.ceil(ch / TILE_SIZE);
 
@@ -375,6 +377,10 @@ export function createRenderer(options: {
         }
     }
 
+    function updateTileSize(newSize: number) {
+        TILE_SIZE = newSize;
+    }
+
     return {
         broadcastPaletteUpdate(index: number, data: Uint8ClampedArray) {
             workers.forEach((worker) => {
@@ -400,5 +406,6 @@ export function createRenderer(options: {
         tileCount: () => tileWorkerMap.size,
         updateZoom,
         zoomAt,
+        updateTileSize, // Export the function to be used in other modules
     };
 }
