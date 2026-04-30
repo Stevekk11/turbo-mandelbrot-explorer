@@ -175,6 +175,12 @@ export function createOverlays(options: {
         const visibleXStart = Math.ceil(xMin / gridStepX) * gridStepX;
         const visibleYStart = Math.ceil(yMin / gridStepY) * gridStepY;
 
+        // Zamrznutí / infinite loop prevence při obřím zoomu vlivem ztráty přesnosti float64
+        if (visibleXStart + gridStepX === visibleXStart || visibleYStart + gridStepY === visibleYStart) {
+            options.ctx.restore();
+            return;
+        }
+
         for (let x = visibleXStart; x <= xMax + gridStepX * 0.5; x += gridStepX) {
             const sx = toScreenX(x);
             if (sx < -1 || sx > w + 1) continue;
