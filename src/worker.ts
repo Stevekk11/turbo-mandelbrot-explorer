@@ -111,130 +111,6 @@ function computeTileJS(
 // ─── Complex power helpers for perturbation rendering ─────────────────────────
 
 /**
- * Compute the next delta for the perturbation formula:
- * δ_{n+1} = (Z_n + δ_n)^d − Z_n^d + δc
- */
-function stepPerturbation(
-    ZnRe: number, ZnIm: number,
-    dRe: number, dIm: number,
-    loopDcRe: number, loopDcIm: number,
-    power: number
-): [number, number] {
-  if (power === 2) {
-    const t1Re = 2.0 * (ZnRe * dRe - ZnIm * dIm);
-    const t1Im = 2.0 * (ZnRe * dIm + ZnIm * dRe);
-    const t2Re = dRe * dRe - dIm * dIm;
-    const t2Im = 2.0 * dRe * dIm;
-    return [t1Re + t2Re + loopDcRe, t1Im + t2Im + loopDcIm];
-  }
-  if (power === 3) {
-    const Z2Re = ZnRe * ZnRe - ZnIm * ZnIm;
-    const Z2Im = 2.0 * ZnRe * ZnIm;
-    const d2Re = dRe * dRe - dIm * dIm;
-    const d2Im = 2.0 * dRe * dIm;
-    const t1Re = 3.0 * (Z2Re * dRe - Z2Im * dIm);
-    const t1Im = 3.0 * (Z2Re * dIm + Z2Im * dRe);
-    const t2Re = 3.0 * (ZnRe * d2Re - ZnIm * d2Im);
-    const t2Im = 3.0 * (ZnRe * d2Im + ZnIm * d2Re);
-    const d3Re = d2Re * dRe - d2Im * dIm;
-    const d3Im = d2Re * dIm + d2Im * dRe;
-    return [t1Re + t2Re + d3Re + loopDcRe, t1Im + t2Im + d3Im + loopDcIm];
-  }
-  if (power === 4) {
-    const Z2Re = ZnRe * ZnRe - ZnIm * ZnIm;
-    const Z2Im = 2.0 * ZnRe * ZnIm;
-    const Z3Re = Z2Re * ZnRe - Z2Im * ZnIm;
-    const Z3Im = Z2Re * ZnIm + Z2Im * ZnRe;
-    const d2Re = dRe * dRe - dIm * dIm;
-    const d2Im = 2.0 * dRe * dIm;
-    const d3Re = d2Re * dRe - d2Im * dIm;
-    const d3Im = d2Re * dIm + d2Im * dRe;
-    const d4Re = d2Re * d2Re - d2Im * d2Im;
-    const d4Im = 2.0 * d2Re * d2Im;
-    const t1Re = 4.0 * (Z3Re * dRe - Z3Im * dIm);
-    const t1Im = 4.0 * (Z3Re * dIm + Z3Im * dRe);
-    const t2Re = 6.0 * (Z2Re * d2Re - Z2Im * d2Im);
-    const t2Im = 6.0 * (Z2Re * d2Im + Z2Im * d2Re);
-    const t3Re = 4.0 * (ZnRe * d3Re - ZnIm * d3Im);
-    const t3Im = 4.0 * (ZnRe * d3Im + ZnIm * d3Re);
-    return [t1Re + t2Re + t3Re + d4Re + loopDcRe, t1Im + t2Im + t3Im + d4Im + loopDcIm];
-  }
-  const [totPowRe, totPowIm] = complexF64PowInt(ZnRe + dRe, ZnIm + dIm, power);
-  const [refPowRe, refPowIm] = complexF64PowInt(ZnRe, ZnIm, power);
-  return [totPowRe - refPowRe + loopDcRe, totPowIm - refPowIm + loopDcIm];
-}
-
-/** Fallback loop when reference orbit ends or escapes. */
-function computeFallbackLoop(
-    zRe: number, zIm: number,
-    cPixelRe: number, cPixelIm: number,
-    maxIter: number, currentIter: number,
-    power: number, logPow: number
-): number {
-  let iter = currentIter;
-  let re = zRe;
-  let im = zIm;
-  while (iter < maxIter) {
-    const x2 = re * re;
-    const y2 = im * im;
-    if (x2 + y2 > 100000.0) {
-      const log_zn = Math.log(x2 + y2) * 0.5;
-      const nu = Math.log(log_zn / logPow) / logPow;
-      return iter + 1.0 - nu;
-    }
-    const [pRe, pIm] = complexF64PowInt(re, im, power);
-    re = pRe + cPixelRe;
-    im = pIm + cPixelIm;
-    iter++;
-  }
-  return -1.0;
-}
-
-/** Core perturbation loop for a single pixel. */
-function runPerturbationPixel(
-    dRe: number, dIm: number,
-    loopDcRe: number, loopDcIm: number,
-    maxIter: number, refOrbitLen: number,
-    orbitRe: Float64Array, orbitIm: Float64Array,
-    power: number, logPow: number
-): { val: number, dRe: number, dIm: number, iter: number } {
-  let iter = 0;
-  let val = -1.0;
-  let n = 0;
-
-  while (iter < maxIter) {
-    if (n >= refOrbitLen) break;
-
-    [dRe, dIm] = stepPerturbation(orbitRe[n], orbitIm[n], dRe, dIm, loopDcRe, loopDcIm, power);
-    iter++;
-
-    const zActRe = orbitRe[n + 1] + dRe;
-    const zActIm = orbitIm[n + 1] + dIm;
-    const r2 = zActRe * zActRe + zActIm * zActIm;
-
-    if (r2 > 100000.0) {
-      const log_zn = Math.log(r2) * 0.5;
-      const nu = Math.log(log_zn / logPow) / logPow;
-      val = iter + 1.0 - nu;
-      break;
-    }
-
-    const d2 = dRe * dRe + dIm * dIm;
-    const Zn1Re = orbitRe[n + 1];
-    const Zn1Im = orbitIm[n + 1];
-    if (d2 > Zn1Re * Zn1Re + Zn1Im * Zn1Im) {
-      dRe = zActRe - orbitRe[0];
-      dIm = zActIm - orbitIm[0];
-      n = 0;
-    } else {
-      n++;
-    }
-  }
-
-  return {val, dRe, dIm, iter};
-}
-
-/**
  * Compute z^d (positive integer d) in float64. Used for the perturbation step:
  *   δ_{n+1} = (Z_n + δ_n)^d − Z_n^d + δc
  */
@@ -395,18 +271,116 @@ function computeTilePerturbation(
 
       let dRe = isJulia ? dcReF : 0.0;
       let dIm = isJulia ? dcImF : 0.0;
-
+      //DUPLICATE CODE BELOW DO NOT REMOVE HURTS PERFORMANCE
       const loopDcRe = isJulia ? 0.0 : dcReF;
       const loopDcIm = isJulia ? 0.0 : dcImF;
 
-      let {val, dRe: lastDRe, dIm: lastDIm, iter} = runPerturbationPixel(
-          dRe, dIm, loopDcRe, loopDcIm, maxIter, refOrbitLen, orbitRe, orbitIm, power, logPow
-      );
+      let iter = 0;
+      let val = -1.0;
+      let n = 0;
+
+      while (iter < maxIter) {
+        if (n >= refOrbitLen) break;
+
+        const ZnRe = orbitRe[n];
+        const ZnIm = orbitIm[n];
+
+        let nextDRe = 0.0;
+        let nextDIm = 0.0;
+
+        if (power === 2) {
+          const t1Re = 2.0 * (ZnRe * dRe - ZnIm * dIm);
+          const t1Im = 2.0 * (ZnRe * dIm + ZnIm * dRe);
+          const t2Re = dRe * dRe - dIm * dIm;
+          const t2Im = 2.0 * dRe * dIm;
+          nextDRe = t1Re + t2Re + loopDcRe;
+          nextDIm = t1Im + t2Im + loopDcIm;
+        } else if (power === 3) {
+          const Z2Re = ZnRe * ZnRe - ZnIm * ZnIm;
+          const Z2Im = 2.0 * ZnRe * ZnIm;
+          const d2Re = dRe * dRe - dIm * dIm;
+          const d2Im = 2.0 * dRe * dIm;
+          const t1Re = 3.0 * (Z2Re * dRe - Z2Im * dIm);
+          const t1Im = 3.0 * (Z2Re * dIm + Z2Im * dRe);
+          const t2Re = 3.0 * (ZnRe * d2Re - ZnIm * d2Im);
+          const t2Im = 3.0 * (ZnRe * d2Im + ZnIm * d2Re);
+          const d3Re = d2Re * dRe - d2Im * dIm;
+          const d3Im = d2Re * dIm + d2Im * dRe;
+          nextDRe = t1Re + t2Re + d3Re + loopDcRe;
+          nextDIm = t1Im + t2Im + d3Im + loopDcIm;
+        } else if (power === 4) {
+          const Z2Re = ZnRe * ZnRe - ZnIm * ZnIm;
+          const Z2Im = 2.0 * ZnRe * ZnIm;
+          const Z3Re = Z2Re * ZnRe - Z2Im * ZnIm;
+          const Z3Im = Z2Re * ZnIm + Z2Im * ZnRe;
+          const d2Re = dRe * dRe - dIm * dIm;
+          const d2Im = 2.0 * dRe * dIm;
+          const d3Re = d2Re * dRe - d2Im * dIm;
+          const d3Im = d2Re * dIm + d2Im * dRe;
+          const d4Re = d2Re * d2Re - d2Im * d2Im;
+          const d4Im = 2.0 * d2Re * d2Im;
+          const t1Re = 4.0 * (Z3Re * dRe - Z3Im * dIm);
+          const t1Im = 4.0 * (Z3Re * dIm + Z3Im * dRe);
+          const t2Re = 6.0 * (Z2Re * d2Re - Z2Im * d2Im);
+          const t2Im = 6.0 * (Z2Re * d2Im + Z2Im * d2Re);
+          const t3Re = 4.0 * (ZnRe * d3Re - ZnIm * d3Im);
+          const t3Im = 4.0 * (ZnRe * d3Im + ZnIm * d3Re);
+          nextDRe = t1Re + t2Re + t3Re + d4Re + loopDcRe;
+          nextDIm = t1Im + t2Im + t3Im + d4Im + loopDcIm;
+        } else {
+          const [totPowRe, totPowIm] = complexF64PowInt(ZnRe + dRe, ZnIm + dIm, power);
+          const [refPowRe, refPowIm] = complexF64PowInt(ZnRe, ZnIm, power);
+          nextDRe = totPowRe - refPowRe + loopDcRe;
+          nextDIm = totPowIm - refPowIm + loopDcIm;
+        }
+
+        dRe = nextDRe;
+        dIm = nextDIm;
+        iter++;
+
+        const zActRe = orbitRe[n + 1] + dRe;
+        const zActIm = orbitIm[n + 1] + dIm;
+        const r2 = zActRe * zActRe + zActIm * zActIm;
+
+        if (r2 > 100000.0) {
+          const log_zn = Math.log(r2) * 0.5;
+          const nu = Math.log(log_zn / logPow) / logPow;
+          val = iter + 1.0 - nu;
+          break;
+        }
+
+        const d2 = dRe * dRe + dIm * dIm;
+        const Zn1Re = orbitRe[n + 1];
+        const Zn1Im = orbitIm[n + 1];
+        if (d2 > Zn1Re * Zn1Re + Zn1Im * Zn1Im) {
+          dRe = zActRe - orbitRe[0];
+          dIm = zActIm - orbitIm[0];
+          n = 0;
+        } else {
+          n++;
+        }
+      }
 
       if (val === -1.0 && refOrbitLen < maxIter && iter < maxIter) {
+        let zRe = orbitRe[refOrbitLen] + dRe;
+        let zIm = orbitIm[refOrbitLen] + dIm;
         const cPixelRe = isJulia ? Number(juliaReStr) : (refRe[0] + dcReF);
         const cPixelIm = isJulia ? Number(juliaImStr) : (refIm[0] + dcImF);
-        val = computeFallbackLoop(orbitRe[refOrbitLen] + lastDRe, orbitIm[refOrbitLen] + lastDIm, cPixelRe, cPixelIm, maxIter, iter, power, logPow);
+
+        while (iter < maxIter) {
+          const x2 = zRe * zRe;
+          const y2 = zIm * zIm;
+          if (x2 + y2 > 100000.0) {
+            const log_zn = Math.log(x2 + y2) * 0.5;
+            const nu = Math.log(log_zn / logPow) / logPow;
+            val = iter + 1.0 - nu;
+            break;
+          }
+          const [pRe, pIm] = complexF64PowInt(zRe, zIm, power);
+          zRe = pRe + cPixelRe;
+          zIm = pIm + cPixelIm;
+          iter++;
+        }
       }
 
       buf[py * width + px] = val;
@@ -479,18 +453,117 @@ function computeTilePerturbationQD(
 
       let dRe = isJulia ? dcReF_p : 0.0;
       let dIm = isJulia ? dcImF : 0.0;
-
+      //DUPLICATE CODE BELOW DO NOT REMOVE HURTS PERFORMANCE
       const loopDcRe = isJulia ? 0.0 : dcReF_p;
       const loopDcIm = isJulia ? 0.0 : dcImF;
 
-      let {val, dRe: lastDRe, dIm: lastDIm, iter} = runPerturbationPixel(
-          dRe, dIm, loopDcRe, loopDcIm, maxIter, refOrbitLen, orbitRe, orbitIm, power, logPow
-      );
+      let iter = 0;
+      let val = -1.0;
+      let n = 0;
+
+      while (iter < maxIter) {
+        if (n >= refOrbitLen) break;
+
+        const ZnRe = orbitRe[n];
+        const ZnIm = orbitIm[n];
+
+        let nextDRe = 0.0;
+        let nextDIm = 0.0;
+
+        if (power === 2) {
+          const t1Re = 2.0 * (ZnRe * dRe - ZnIm * dIm);
+          const t1Im = 2.0 * (ZnRe * dIm + ZnIm * dRe);
+          const t2Re = dRe * dRe - dIm * dIm;
+          const t2Im = 2.0 * dRe * dIm;
+          nextDRe = t1Re + t2Re + loopDcRe;
+          nextDIm = t1Im + t2Im + loopDcIm;
+        } else if (power === 3) {
+          const Z2Re = ZnRe * ZnRe - ZnIm * ZnIm;
+          const Z2Im = 2.0 * ZnRe * ZnIm;
+          const d2Re = dRe * dRe - dIm * dIm;
+          const d2Im = 2.0 * dRe * dIm;
+          const t1Re = 3.0 * (Z2Re * dRe - Z2Im * dIm);
+          const t1Im = 3.0 * (Z2Re * dIm + Z2Im * dRe);
+          const t2Re = 3.0 * (ZnRe * d2Re - ZnIm * d2Im);
+          const t2Im = 3.0 * (ZnRe * d2Im + ZnIm * d2Re);
+          const d3Re = d2Re * dRe - d2Im * dIm;
+          const d3Im = d2Re * dIm + d2Im * dRe;
+          nextDRe = t1Re + t2Re + d3Re + loopDcRe;
+          nextDIm = t1Im + t2Im + d3Im + loopDcIm;
+        } else if (power === 4) {
+          const Z2Re = ZnRe * ZnRe - ZnIm * ZnIm;
+          const Z2Im = 2.0 * ZnRe * ZnIm;
+          const Z3Re = Z2Re * ZnRe - Z2Im * ZnIm;
+          const Z3Im = Z2Re * ZnIm + Z2Im * ZnRe;
+          const d2Re = dRe * dRe - dIm * dIm;
+          const d2Im = 2.0 * dRe * dIm;
+          const d3Re = d2Re * dRe - d2Im * dIm;
+          const d3Im = d2Re * dIm + d2Im * dRe;
+          const d4Re = d2Re * d2Re - d2Im * d2Im;
+          const d4Im = 2.0 * d2Re * d2Im;
+          const t1Re = 4.0 * (Z3Re * dRe - Z3Im * dIm);
+          const t1Im = 4.0 * (Z3Re * dIm + Z3Im * dRe);
+          const t2Re = 6.0 * (Z2Re * d2Re - Z2Im * d2Im);
+          const t2Im = 6.0 * (Z2Re * d2Im + Z2Im * d2Re);
+          const t3Re = 4.0 * (ZnRe * d3Re - ZnIm * d3Im);
+          const t3Im = 4.0 * (ZnRe * d3Im + ZnIm * d3Re);
+          nextDRe = t1Re + t2Re + t3Re + d4Re + loopDcRe;
+          nextDIm = t1Im + t2Im + t3Im + d4Im + loopDcIm;
+        } else {
+          const [totPowRe, totPowIm] = complexF64PowInt(ZnRe + dRe, ZnIm + dIm, power);
+          const [refPowRe, refPowIm] = complexF64PowInt(ZnRe, ZnIm, power);
+          nextDRe = totPowRe - refPowRe + loopDcRe;
+          nextDIm = totPowIm - refPowIm + loopDcIm;
+        }
+
+        dRe = nextDRe;
+        dIm = nextDIm;
+        iter++;
+
+        const zActRe = orbitRe[n + 1] + dRe;
+        const zActIm = orbitIm[n + 1] + dIm;
+        const r2 = zActRe * zActRe + zActIm * zActIm;
+
+        if (r2 > 100000.0) {
+          const log_zn = Math.log(r2) * 0.5;
+          const nu = Math.log(log_zn / logPow) / logPow;
+          val = iter + 1.0 - nu;
+          break;
+        }
+
+        const d2 = dRe * dRe + dIm * dIm;
+        const Zn1Re = orbitRe[n + 1];
+        const Zn1Im = orbitIm[n + 1];
+        if (d2 > Zn1Re * Zn1Re + Zn1Im * Zn1Im) {
+          dRe = zActRe - orbitRe[0];
+          dIm = zActIm - orbitIm[0];
+          n = 0;
+        } else {
+          n++;
+        }
+      }
 
       if (val === -1.0 && refOrbitLen < maxIter && iter < maxIter) {
+        let zRe = orbitRe[refOrbitLen] + dRe;
+        let zIm = orbitIm[refOrbitLen] + dIm;
         const cPixelRe = isJulia ? Number(juliaReStr) : (qdHi(refRe) + dcReF_p);
         const cPixelIm = isJulia ? Number(juliaImStr) : (qdHi(refIm) + dcImF);
-        val = computeFallbackLoop(orbitRe[refOrbitLen] + lastDRe, orbitIm[refOrbitLen] + lastDIm, cPixelRe, cPixelIm, maxIter, iter, power, logPow);
+
+        while (iter < maxIter) {
+          const x2 = zRe * zRe;
+          const y2 = zIm * zIm;
+          const r2 = x2 + y2;
+          if (r2 > 100000.0) {
+            const log_zn = Math.log(r2) * 0.5;
+            const nu = Math.log(log_zn / logPow) / logPow;
+            val = iter + 1.0 - nu;
+            break;
+          }
+          const [pRe, pIm] = complexF64PowInt(zRe, zIm, power);
+          zRe = pRe + cPixelRe;
+          zIm = pIm + cPixelIm;
+          iter++;
+        }
       }
 
       buf[py * width + px] = val;
@@ -519,9 +592,8 @@ function applyColorization(
 
   for (let i = 0; i < size; i++) {
     const val = iterBuf[i];
-    const o = i * 4;
     if (val < 0) {
-      rgba[o + 3] = 255;
+      rgba[i * 4 + 3] = 255;
       continue;
     }
     const t = ((val * colorSpeed * 0.01 + colorOffset) % 1 + 1) % 1;
@@ -531,7 +603,7 @@ function applyColorization(
     const frac = fIdx - idx0;
     const b0 = idx0 * 4;
     const b1 = idx1 * 4;
-
+    const o = i * 4;
     let r = (paletteData[b0]     + (paletteData[b1]     - paletteData[b0])     * frac) | 0;
     let g = (paletteData[b0 + 1] + (paletteData[b1 + 1] - paletteData[b0 + 1]) * frac) | 0;
     let b = (paletteData[b0 + 2] + (paletteData[b1 + 2] - paletteData[b0 + 2]) * frac) | 0;
@@ -539,22 +611,20 @@ function applyColorization(
     if (shadows) {
       const py = Math.floor(i / tileW);
       const px = i % tileW;
-      const getVal = (x: number, y: number) => {
-        const v = iterBuf[y * tileW + x];
-        return v < 0 ? val : v;
-      };
-      const vL = px > 0 ? getVal(px - 1, py) : val;
-      const vR = px < tileW - 1 ? getVal(px + 1, py) : val;
-      const vU = py > 0 ? getVal(px, py - 1) : val;
-      const vD = py < tileH - 1 ? getVal(px, py + 1) : val;
+      const vL = px > 0 ? (iterBuf[py * tileW + (px - 1)] < 0 ? val : iterBuf[py * tileW + (px - 1)]) : val;
+      const vR = px < tileW - 1 ? (iterBuf[py * tileW + (px + 1)] < 0 ? val : iterBuf[py * tileW + (px + 1)]) : val;
+      const vU = py > 0 ? (iterBuf[(py - 1) * tileW + px] < 0 ? val : iterBuf[(py - 1) * tileW + px]) : val;
+      const vD = py < tileH - 1 ? (iterBuf[(py + 1) * tileW + px] < 0 ? val : iterBuf[(py + 1) * tileW + px]) : val;
       const nx = -(vR - vL);
       const ny = -(vD - vU);
       const nz = 2.0;
       const nlen = Math.sqrt(nx * nx + ny * ny + nz * nz);
-      const light = Math.max(0.25, Math.min(1.0, (nx * 0.5774 + ny * 0.5774 + nz * 0.5774) / nlen));
-      r = (r * light) | 0;
-      g = (g * light) | 0;
-      b = (b * light) | 0;
+      const lx = 0.5774, ly = 0.5774, lz = 0.5774;
+      const dot = (nx / nlen) * lx + (ny / nlen) * ly + (nz / nlen) * lz;
+      const light = Math.max(0.25, Math.min(1.0, dot));
+      r = Math.min(255, (r * light) | 0);
+      g = Math.min(255, (g * light) | 0);
+      b = Math.min(255, (b * light) | 0);
     }
 
     rgba[o]     = r;
@@ -583,7 +653,7 @@ function renderTile(task: RenderTask): ArrayBuffer {
   const yMaxHi = qdHi(qdFromString(yMax));
 
   const dxCheck = xMaxHi - xMinHi;
-  const inferredTier = !Number.isFinite(dxCheck) ? 'qd' : (Math.abs(dxCheck) < 1e-29 ? 'qd' : (Math.abs(dxCheck) < 2e-14 ? 'dd' : 'wasm'));
+  const inferredTier = !Number.isFinite(dxCheck) ? 'qd' : (Math.abs(dxCheck) < 1e-28 ? 'qd' : (Math.abs(dxCheck) < 2e-13 ? 'dd' : 'wasm'));
   const baseTier = task.precisionTier ?? inferredTier;
   // Perturbation theory supports fractalType=0 with any positive integer power ≥ 2.
   // Non-integer powers, negative powers, and other fractal types use WASM only.
