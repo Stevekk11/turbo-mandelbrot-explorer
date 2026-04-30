@@ -179,8 +179,8 @@ export function createOverlays(options: {
             const sx = toScreenX(x);
             if (sx < -1 || sx > w + 1) continue;
 
-            options.ctx.strokeStyle = Math.abs(x) < gridStepX * 0.5 ? 'rgba(255,255,255,0.50)' : 'rgba(148,163,184,0.18)';
-            options.ctx.lineWidth = Math.abs(x) < gridStepX * 0.5 ? 2.1 : 1.4;
+            options.ctx.strokeStyle = Math.abs(x) < gridStepX * 0.5 ? 'rgba(255,255,255,0.50)' : 'rgba(255,0,85,0.50)';
+            options.ctx.lineWidth = Math.abs(x) < gridStepX * 0.5 ? 3 : 2.1;
             options.ctx.beginPath();
             options.ctx.moveTo(sx, 0);
             options.ctx.lineTo(sx, h);
@@ -204,7 +204,7 @@ export function createOverlays(options: {
             const sy = toScreenY(y);
             if (sy < -1 || sy > h + 1) continue;
 
-            options.ctx.strokeStyle = Math.abs(y) < gridStepY * 0.5 ? 'rgba(255,255,255,0.50)' : 'rgba(148,163,184,0.18)';
+            options.ctx.strokeStyle = Math.abs(y) < gridStepY * 0.5 ? 'rgba(255,255,255,0.50)' : 'rgba(255, 0, 85, 0.50)';
             options.ctx.lineWidth = Math.abs(y) < gridStepY * 0.5 ? 2.1 : 1.4;
             options.ctx.beginPath();
             options.ctx.moveTo(0, sy);

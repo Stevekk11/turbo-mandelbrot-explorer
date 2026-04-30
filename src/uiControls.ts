@@ -320,6 +320,13 @@ export function createUiControls(options: {
         randomizePalette: () => void;
         resetView: () => void;
     }) {
+        const topBar = document.getElementById('top-bar');
+        const menuBtn = document.getElementById('topbar-menu-btn');
+        menuBtn?.addEventListener('click', () => {
+            if (!topBar) return;
+            const isOpen = topBar.classList.toggle('top-bar-open');
+            menuBtn.setAttribute('aria-expanded', String(isOpen));
+        });
         document.getElementById('orbit-btn')?.addEventListener('click', options.overlays.toggleOrbitMode);
         document.getElementById('grid-btn')?.addEventListener('click', options.overlays.toggleAxisGrid);
         document.getElementById('reset-btn')?.addEventListener('click', deps.resetView);

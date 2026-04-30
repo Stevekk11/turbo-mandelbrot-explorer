@@ -53,11 +53,23 @@ html, body {
   pointer-events: auto;
 }
 
+.top-bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.topbar-menu-btn {
+  display: none;
+}
+
 #hover-iter-container {
-  position: fixed;
-  top: 45px;
-  left: 10px;
+  position: relative;
+  margin: 45px 0 0 16px;
   z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
   pointer-events: none;
 }
 
@@ -432,6 +444,22 @@ kbd {
   #top-bar .title-text { display: none; }
   .btn-label { display: none; }
   #hud .hud-hint { display: none; }
+  #top-bar {
+    flex-wrap: wrap;
+  }
+  .topbar-menu-btn {
+    display: inline-flex;
+  }
+  .top-bar-actions {
+    display: none;
+    width: 100%;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    padding: 0.5rem 0 0.75rem;
+  }
+  #top-bar.top-bar-open .top-bar-actions {
+    display: flex;
+  }
 }
 
 /* ── Scrollbar ──────────────────────────────────────────────────── */
@@ -440,11 +468,8 @@ kbd {
 ::-webkit-scrollbar-thumb { background: var(--clr-border); border-radius: 3px; }
 
 .precision-tier-hint {
-  position: fixed;
-  right: 0.65rem;
-  bottom: calc(52px + env(safe-area-inset-bottom));
   z-index: 26;
-  padding: 0.2rem 0.5rem;
+  padding: 0.2rem 0.6rem;
   border-radius: 9999px;
   border: 1px solid var(--clr-border);
   background: rgba(10, 10, 20, 0.78);
@@ -459,7 +484,15 @@ kbd {
 
 @media (max-width: 640px) {
   .precision-tier-hint {
-    bottom: calc(56px + env(safe-area-inset-bottom));
     font-size: 0.58rem;
   }
+  #hover-iter-container {
+  position: relative;
+  margin: 10px 0 0 16px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  pointer-events: none;
+}
 }
