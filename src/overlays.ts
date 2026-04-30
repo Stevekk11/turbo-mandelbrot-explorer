@@ -1,5 +1,5 @@
 import type {QD} from './qd';
-import {qdAdd, qdFromString, qdHi, qdMul, qdSub, qdToNumber} from './qd';
+import {qdAdd, qdDiv, qdFromString, qdHi, qdMul, qdSub, qdToNumber} from './qd';
 import type {ViewState} from './types';
 import {buildEscapeGuidedPath, computeOrbitPoints} from './fractalMath';
 
@@ -40,12 +40,14 @@ export function createOverlays(options: {
         const dXMax = qdFromString(view.xMax);
         const dYMin = qdFromString(view.yMin);
         const dYMax = qdFromString(view.yMax);
-        const dxNum = qdHi(qdSub(re, dXMin));
-        const dyNum = qdHi(qdSub(im, dYMin));
-        const xRangeNum = qdHi(qdSub(dXMax, dXMin));
-        const yRangeNum = qdHi(qdSub(dYMax, dYMin));
-        const x = (dxNum / xRangeNum) * options.canvas.width;
-        const y = (dyNum / yRangeNum) * options.canvas.height;
+        const xRange = qdSub(dXMax, dXMin);
+        const yRange = qdSub(dYMax, dYMin);
+        const dx = qdSub(re, dXMin);
+        const dy = qdSub(im, dYMin);
+        const xNorm = qdToNumber(qdDiv(dx, xRange));
+        const yNorm = qdToNumber(qdDiv(dy, yRange));
+        const x = (Number.isFinite(xNorm) ? xNorm : 0) * options.canvas.width;
+        const y = (Number.isFinite(yNorm) ? yNorm : 0) * options.canvas.height;
         return {x, y};
     }
 
