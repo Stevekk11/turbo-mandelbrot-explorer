@@ -45,7 +45,7 @@ export function createRenderer(options: {
 
     function getPrecisionTier(xRange: QD): PrecisionTier {
         const dx = Math.abs(qdHi(xRange));
-        if (!Number.isFinite(dx) || dx < 1e-29) return 'qd';
+        if (!Number.isFinite(dx) || dx < 1e-27) return 'qd';
         if (dx < 1e-13) return 'dd';
         return 'wasm';
     }
@@ -358,9 +358,9 @@ export function createRenderer(options: {
         const newXRange = qdMulNum(xRange, factor);
         const newYRange = qdMulNum(yRange, factor);
 
-        view.xMin = qdToString(qdSub(fx, qdMulNum(qdDivNum(newXRange, options.canvas.clientWidth), screenX)));
+        view.xMin = qdToString(qdSub(fx, qdMulNum(qdDivNum(newXRange, options.canvas.width), screenX * dpr)));
         view.xMax = qdToString(qdAdd(qdFromString(view.xMin), newXRange));
-        view.yMin = qdToString(qdSub(fy, qdMulNum(qdDivNum(newYRange, options.canvas.clientHeight), screenY)));
+        view.yMin = qdToString(qdSub(fy, qdMulNum(qdDivNum(newYRange, options.canvas.height), screenY * dpr)));
         view.yMax = qdToString(qdAdd(qdFromString(view.yMin), newYRange));
         options.onViewChange(view);
 

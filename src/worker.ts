@@ -260,13 +260,13 @@ function computeTilePerturbation(
   const dy_dd = ddDivNum(ddSub(yMax_dd, yMin_dd), height);
 
   for (let py = 0; py < height; py++) {
-    const pixelIm_dd = ddAdd(yMin_dd, ddMulNum(dy_dd, py));
-    const dcImDD = ddSub(pixelIm_dd, refIm);
+    const pixelIm_dd = ddAdd(ddSub(yMin_dd, refIm), ddMulNum(dy_dd, py));
+    const dcImDD = pixelIm_dd;
     const dcImF  = dcImDD[0] + dcImDD[1];
 
     for (let px = 0; px < width; px++) {
-      const pixelRe_dd = ddAdd(xMin_dd, ddMulNum(dx_dd, px));
-      const dcReDD = ddSub(pixelRe_dd, refRe);
+      const pixelRe_dd = ddAdd(ddSub(xMin_dd, refRe), ddMulNum(dx_dd, px));
+      const dcReDD = pixelRe_dd;
       const dcReF  = dcReDD[0] + dcReDD[1];
 
       let dRe = isJulia ? dcReF : 0.0;
@@ -442,13 +442,13 @@ function computeTilePerturbationQD(
   const dy_qd = qdDivNum(qdSub(yMax_qd, yMin_qd), height);
 
   for (let py = 0; py < height; py++) {
-    const pixelIm_qd = qdAdd(yMin_qd, qdMulNum(dy_qd, py));
-    const dcImQD = qdSub(pixelIm_qd, refIm);
+    const pixelIm_qd = qdAdd(qdSub(yMin_qd, refIm), qdMulNum(dy_qd, py));
+    const dcImQD = pixelIm_qd;
     const dcImF = (dcImQD[0] + dcImQD[1]) + (dcImQD[2] + dcImQD[3]);
 
     for (let px = 0; px < width; px++) {
-      const pixelRe_qd = qdAdd(xMin_qd, qdMulNum(dx_qd, px));
-      const dcReQD_p = qdSub(pixelRe_qd, refRe);
+      const pixelRe_qd = qdAdd(qdSub(xMin_qd, refRe), qdMulNum(dx_qd, px));
+      const dcReQD_p = pixelRe_qd;
       const dcReF_p = (dcReQD_p[0] + dcReQD_p[1]) + (dcReQD_p[2] + dcReQD_p[3]);
 
       let dRe = isJulia ? dcReF_p : 0.0;
@@ -653,7 +653,7 @@ function renderTile(task: RenderTask): ArrayBuffer {
   const yMaxHi = qdHi(qdFromString(yMax));
 
   const dxCheck = xMaxHi - xMinHi;
-  const inferredTier = !Number.isFinite(dxCheck) ? 'qd' : (Math.abs(dxCheck) < 1e-28 ? 'qd' : (Math.abs(dxCheck) < 2e-13 ? 'dd' : 'wasm'));
+  const inferredTier = !Number.isFinite(dxCheck) ? 'qd' : (Math.abs(dxCheck) < 1e-27 ? 'qd' : (Math.abs(dxCheck) < 2e-13 ? 'dd' : 'wasm'));
   const baseTier = task.precisionTier ?? inferredTier;
   // Perturbation theory supports fractalType=0 with any positive integer power ≥ 2.
   // Non-integer powers, negative powers, and other fractal types use WASM only.

@@ -20,11 +20,6 @@ function twoSum(a: number, b: number): [number, number] {
     return [s, (a - (s - bb)) + (b - bb)];
 }
 
-function quickTwoSum(a: number, b: number): [number, number] {
-    const s = a + b;
-    return [s, b - (s - a)];
-}
-
 function split(a: number): [number, number] {
     const t = SPLITTER * a;
     const hi = t - (t - a);
@@ -38,39 +33,77 @@ function twoProd(a: number, b: number): [number, number] {
     return [p, ((ah * bh - p) + ah * bl + al * bh) + al * bl];
 }
 
+function threeSum(a: number, b: number, c: number): [number, number, number] {
+    const [t1, t2] = twoSum(a, b);
+    const [s0, t3] = twoSum(c, t1);
+    const [s1, s2] = twoSum(t2, t3);
+    return [s0, s1, s2];
+}
+
+function threeSum2(a: number, b: number, c: number): [number, number] {
+    const [t1, t2] = twoSum(a, b);
+    const [s0, t3] = twoSum(c, t1);
+    return [s0, t2 + t3];
+}
+
 // ─── Renormalization ──────────────────────────────────────────────────────────
-// Single forward pass: accumulate from most-significant to least-significant,
-// then a second forward pass to ensure non-overlapping property.
+// Bottom-up pass from least-significant to most-significant, followed by a
+// top-down pass that skips zero components to guarantee non-overlapping form
+// even after catastrophic cancellation in subtraction.
 
-function renorm5(a0: number, a1: number, a2: number, a3: number, a4: number): QD {
-    let s: number, e: number;
+function renorm5(c0: number, c1: number, c2: number, c3: number, c4: number): QD {
+    if (!Number.isFinite(c0)) return [c0, 0, 0, 0];
 
-    // Forward pass: propagate carries from a0 downward
-    [s, e] = quickTwoSum(a0, a1);
-    a0 = s;
-    a1 = e;
-    [s, e] = quickTwoSum(a1, a2);
-    a1 = s;
-    a2 = e;
-    [s, e] = quickTwoSum(a2, a3);
-    a2 = s;
-    a3 = e;
-    [s, e] = quickTwoSum(a3, a4);
-    a3 = s;
-    a4 = e;
+    let s0: number, s1: number, s2: number, s3: number, s4: number;
 
-    // Second forward pass to clean up
-    [s, e] = quickTwoSum(a0, a1);
-    a0 = s;
-    a1 = e;
-    [s, e] = quickTwoSum(a1, a2);
-    a1 = s;
-    a2 = e;
-    [s, e] = quickTwoSum(a2, a3);
-    a2 = s;
-    a3 = e;
+    [s0, s4] = twoSum(c3, c4);
+    [s0, s3] = twoSum(c2, s0);
+    [s0, s2] = twoSum(c1, s0);
+    [s0, s1] = twoSum(c0, s0);
 
-    return [a0, a1, a2, a3];
+    let b0 = s0;
+    let b1 = 0;
+    let b2 = 0;
+    let b3 = 0;
+
+    [b0, b1] = twoSum(s0, s1);
+    if (b1 !== 0) {
+        [b1, b2] = twoSum(b1, s2);
+        if (b2 !== 0) {
+            [b2, b3] = twoSum(b2, s3);
+            if (b3 !== 0) {
+                b3 += s4;
+            } else {
+                [b2, b3] = twoSum(b2, s4);
+            }
+        } else {
+            [b1, b2] = twoSum(b1, s3);
+            if (b2 !== 0) {
+                [b2, b3] = twoSum(b2, s4);
+            } else {
+                [b1, b2] = twoSum(b1, s4);
+            }
+        }
+    } else {
+        [b0, b1] = twoSum(b0, s2);
+        if (b1 !== 0) {
+            [b1, b2] = twoSum(b1, s3);
+            if (b2 !== 0) {
+                [b2, b3] = twoSum(b2, s4);
+            } else {
+                [b1, b2] = twoSum(b1, s4);
+            }
+        } else {
+            [b0, b1] = twoSum(b0, s3);
+            if (b1 !== 0) {
+                [b1, b2] = twoSum(b1, s4);
+            } else {
+                [b0, b1] = twoSum(b0, s4);
+            }
+        }
+    }
+
+    return [b0, b1, b2, b3];
 }
 
 function renorm4(a0: number, a1: number, a2: number, a3: number): QD {
@@ -93,27 +126,19 @@ export function qdToNumber(a: QD): number {
 
 // ─── Core arithmetic ──────────────────────────────────────────────────────────
 
-// QD + QD  (Hida et al. Algorithm 4 — sloppy add)
+// QD + QD  (Hida et al. Algorithm 4)
 export function qdAdd(a: QD, b: QD): QD {
-    let [s0, e0] = twoSum(a[0], b[0]);
-    let [s1, e1] = twoSum(a[1], b[1]);
-    let [s2, e2] = twoSum(a[2], b[2]);
-    let [s3, e3] = twoSum(a[3], b[3]);
+    let [s0, t0] = twoSum(a[0], b[0]);
+    let [s1, t1] = twoSum(a[1], b[1]);
+    let [s2, t2] = twoSum(a[2], b[2]);
+    let [s3, t3] = twoSum(a[3], b[3]);
 
-    // Cascade the errors into the next component
-    [s1, e0] = twoSum(s1, e0);
-    [s2, e1] = twoSum(s2, e1);
-    [s3, e2] = twoSum(s3, e2);
-    const s4 = e3 + e2;
+    [s1, t0] = twoSum(s1, t0);
+    [s2, t0, t1] = threeSum(s2, t0, t1);
+    [s3, t0] = threeSum2(s3, t0, t2);
+    t0 = t0 + t1 + t3;
 
-    [s2, e0] = twoSum(s2, e0);
-    [s3, e1] = twoSum(s3, e1);
-    const s5 = s4 + e1;
-
-    [s3, e0] = twoSum(s3, e0);
-    const s6 = s5 + e0;
-
-    return renorm5(s0, s1, s2, s3, s6);
+    return renorm5(s0, s1, s2, s3, t0);
 }
 
 export function qdSub(a: QD, b: QD): QD {
@@ -122,24 +147,18 @@ export function qdSub(a: QD, b: QD): QD {
 
 // QD * double  (Hida et al.)
 export function qdMulNum(a: QD, b: number): QD {
-    const [p0, e0] = twoProd(a[0], b);
-    const [p1, e1] = twoProd(a[1], b);
-    const [p2, e2] = twoProd(a[2], b);
-    const [p3, e3] = twoProd(a[3], b);
+    const [p0, q0] = twoProd(a[0], b);
+    const [p1, q1] = twoProd(a[1], b);
+    const [p2, q2] = twoProd(a[2], b);
+    const p3 = a[3] * b;
 
-    let s0 = p0;
-    let [s1, t0] = quickTwoSum(p1, e0);
-    let [s2, t1] = twoSum(p2, e1);
-    let [s3, t2] = twoSum(p3, e2);
+    const s0 = p0;
+    const [s1, t0] = twoSum(q0, p1);
+    const [s2, t1, t2] = threeSum(t0, q1, p2);
+    const [s3, t3] = threeSum2(t1, q2, p3);
+    const s4 = t3 + t2;
 
-    [s2, t0] = twoSum(s2, t0);
-    [s3, t1] = twoSum(s3, t1);
-    const s4 = t2 + e3;
-    [s3, t0] = twoSum(s3, t0);
-    const s5 = t1 + s4;
-    const s6 = t0 + s5;
-
-    return renorm5(s0, s1, s2, s3, s6);
+    return renorm5(s0, s1, s2, s3, s4);
 }
 
 export function qdDivNum(a: QD, b: number): QD {
@@ -157,9 +176,9 @@ export function qdDivNum(a: QD, b: number): QD {
     return renorm4(q0, q1, q2, q3);
 }
 
-// QD * QD  (Hida et al. — sloppy multiply, keeps terms up to order 4)
+// QD * QD  (Hida et al. — accurate multiply, keeps terms up to order 4)
 export function qdMul(a: QD, b: QD): QD {
-    const [p0, q0] = twoProd(a[0], b[0]);
+    let [p0, q0] = twoProd(a[0], b[0]);
 
     let [p1, q1] = twoProd(a[0], b[1]);
     let [p2, q2] = twoProd(a[1], b[0]);
@@ -168,35 +187,41 @@ export function qdMul(a: QD, b: QD): QD {
     let [p4, q4] = twoProd(a[1], b[1]);
     let [p5, q5] = twoProd(a[2], b[0]);
 
-    // Level 1: accumulate order-1 terms
-    let [s1, r0] = twoSum(q0, p1);
-    [s1, r0] = twoSum(s1, p2);
+    // Level 1: accumulate order-1 terms (p1, p2, q0)
+    [p1, p2, q0] = threeSum(p1, p2, q0);
 
-    // Level 2: accumulate order-2 terms
-    let [s2, r1] = twoSum(r0, p3);
-    [s2, r1] = twoSum(s2, p4);
-    [s2, r1] = twoSum(s2, p5);
-    // Include the errors from level 1
-    [s2, r1] = twoSum(s2, q1);
-    [s2, r1] = twoSum(s2, q2);
+    // Level 2: five-three-sum of (p2, q1, q2, p3, p4, p5)
+    [p2, q1, q2] = threeSum(p2, q1, q2);
+    [p3, p4, p5] = threeSum(p3, p4, p5);
+    let [s0, t0] = twoSum(p2, p3);
+    let [s1, t1] = twoSum(q1, p4);
+    let s2 = q2 + p5;
+    [s1, t0] = twoSum(s1, t0);
+    s2 += t0 + t1;
 
-    // Order-3 terms (only high parts needed)
-    const p6 = a[0] * b[3];
-    const p7 = a[1] * b[2];
-    const p8 = a[2] * b[1];
-    const p9 = a[3] * b[0];
+    // Level 3: order-3 terms and errors from level 2
+    let [p6, q6] = twoProd(a[0], b[3]);
+    let [p7, q7] = twoProd(a[1], b[2]);
+    let [p8, q8] = twoProd(a[2], b[1]);
+    let [p9, q9] = twoProd(a[3], b[0]);
 
-    // Order-3 accumulation
-    let [s3, r2] = twoSum(r1, p6);
-    [s3, r2] = twoSum(s3, p7);
-    [s3, r2] = twoSum(s3, p8);
-    [s3, r2] = twoSum(s3, p9);
-    // Include errors from level 2
-    [s3, r2] = twoSum(s3, q3);
-    [s3, r2] = twoSum(s3, q4);
-    [s3, r2] = twoSum(s3, q5);
+    [q0, q3] = twoSum(q0, q3);
+    [q4, q5] = twoSum(q4, q5);
+    [p6, p7] = twoSum(p6, p7);
+    [p8, p9] = twoSum(p8, p9);
 
-    return renorm5(p0, s1, s2, s3, r2);
+    [q0, p6] = twoSum(q0, p6);
+    [q4, p8] = twoSum(q4, p8);
+
+    [q0, q4] = twoSum(q0, q4);
+    [s1, q0] = twoSum(s1, q0);
+
+    const s3 =
+        q0 + q3 + q5 + p6 + p7 + p8 + p9 + s2 +
+        a[1] * b[3] + a[2] * b[2] + a[3] * b[1] +
+        q6 + q7 + q8 + q9;
+
+    return renorm5(p0, p1, s0, s1, s3);
 }
 
 export function qdDiv(a: QD, b: QD): QD {
