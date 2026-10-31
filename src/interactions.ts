@@ -42,6 +42,10 @@ export function createInteractions(options: {
     let lastTouchDist = 0;
     let panSource: OffscreenCanvas | null = null;
     let wheelTimer: ReturnType<typeof setTimeout> | null = null;
+    let wheelRemainingLog = 0;
+    let wheelAnchorX = 0;
+    let wheelAnchorY = 0;
+    let wheelRaf = 0;
     let pathDrawingMode = false;
     let lastTapTime = 0;
     let lastTapX = 0;
@@ -160,6 +164,22 @@ export function createInteractions(options: {
         options.getDrawAxisGrid()();
     }
 
+    function stepSmoothZoom() {
+        wheelRaf = 0;
+        if (Math.abs(wheelRemainingLog) < 1e-4) {
+            wheelRemainingLog = 0;
+            return;
+        }
+        // Ease-out: consume a fraction of the remaining zoom each frame.
+        const step = Math.abs(wheelRemainingLog) < 0.005 ? wheelRemainingLog : wheelRemainingLog * 0.18;
+        wheelRemainingLog -= step;
+        const factor = Math.exp(step);
+        options.zoomAt(wheelAnchorX, wheelAnchorY, factor, false);
+        renderVisualZoom(wheelAnchorX, wheelAnchorY, factor);
+        scheduleWheelRender();
+        wheelRaf = requestAnimationFrame(stepSmoothZoom);
+    }
+
     function bindCanvasEvents() {
         const canvas = options.canvas;
 
@@ -200,10 +220,11 @@ export function createInteractions(options: {
 
         canvas.addEventListener('wheel', (e) => {
             e.preventDefault();
-            const factor = Math.exp(e.deltaY * 0.002);
-            options.zoomAt(e.clientX, e.clientY, factor, false);
-            renderVisualZoom(e.clientX, e.clientY, factor);
+            wheelRemainingLog += e.deltaY * 0.002;
+            wheelAnchorX = e.clientX;
+            wheelAnchorY = e.clientY;
             scheduleWheelRender();
+            if (!wheelRaf) wheelRaf = requestAnimationFrame(stepSmoothZoom);
         }, {passive: false});
 
         canvas.addEventListener('touchstart', (e) => {
