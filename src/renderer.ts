@@ -291,9 +291,6 @@ export function createRenderer(options: {
                     result.tileX, result.tileY, result.tileW, result.tileH
                 );
             }
-                ctx.drawImage(offscreen, 0, 0);
-                options.onDrawOverlays();
-            }
         }
 
         if (isCurrentRender) {
