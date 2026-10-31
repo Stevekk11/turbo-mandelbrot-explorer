@@ -45,7 +45,7 @@ const renderer = createRenderer({
   },
   onDrawOverlays: () => overlays.drawAll(),
   isInteractionIdle: () => !interactions || (!interactions.isDragging() && interactions.wheelTimerIsIdle()),
-  isAnimationPaused: () => !audioControls || audioControls.isColorAnimActive(),
+  isAnimationPaused: () => !audioControls || audioControls.isColorAnimActive() || (audioControls.isAudioPulseActive() && audioControls.getPulseMode() === 'cycling'),
   onProgress: (progress) => {
     if (ui) ui.updateProgressBar(progress);
   },

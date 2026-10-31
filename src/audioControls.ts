@@ -1,6 +1,11 @@
 import {createAudioVisualizer} from './audioVisualizer';
 import type {ViewState} from './types';
 
+export type PulseEffectMode = 'inplace' | 'cycling';
+
+const AUDIO_RECOLOR_INTERVAL_MS = 33;
+const AUDIO_OFFSET_STEP = 0.0012;
+
 function formatTime(totalSeconds: number): string {
     if (!Number.isFinite(totalSeconds) || totalSeconds <= 0) return '0:00';
     const m = Math.floor(totalSeconds / 60);
@@ -22,6 +27,9 @@ export function createAudioControls(options: {
     let audioPulseRaf = 0;
     let audioPulseActive = false;
     let audioSensitivity = 1.4;
+    let pulseEffectMode: PulseEffectMode = 'inplace';
+    let lastAudioRecolorAt = 0;
+    let lastRecolorScheduledAt = 0;
     let isSeekingSong = false;
 
     function updateAudioSensitivityUI() {
@@ -29,6 +37,18 @@ export function createAudioControls(options: {
         const display = document.getElementById('audio-sensitivity-display');
         if (slider) slider.value = audioSensitivity.toFixed(1);
         if (display) display.textContent = audioSensitivity.toFixed(1);
+    }
+
+    function updatePulseModeUI() {
+        const inplaceRadio = document.getElementById('pulse-mode-inplace') as HTMLInputElement | null;
+        const cyclingRadio = document.getElementById('pulse-mode-cycling') as HTMLInputElement | null;
+        const alertEl = document.getElementById('motion-sickness-alert');
+
+        if (inplaceRadio) inplaceRadio.checked = pulseEffectMode === 'inplace';
+        if (cyclingRadio) cyclingRadio.checked = pulseEffectMode === 'cycling';
+        if (alertEl) {
+            alertEl.style.display = pulseEffectMode === 'cycling' ? 'block' : 'none';
+        }
     }
 
     function updateSongUI() {
@@ -94,6 +114,7 @@ export function createAudioControls(options: {
             }
         }
         updateSongUI();
+        updatePulseModeUI();
     }
 
     function startPulseLoop() {
@@ -150,6 +171,31 @@ export function createAudioControls(options: {
         if (levelText) {
             const prefix = audioVisualizer.getMode() === 'song' ? '🎵 ' : '🎤 ';
             levelText.textContent = `${prefix}${Math.round(level * 100)}%`;
+        }
+
+        // Color cycling mode: rotates palette offset and schedules worker recoloring with audio energy
+        if (pulseEffectMode === 'cycling') {
+            const now = performance.now();
+            const pending = options.getPendingRecolorTiles();
+
+            // Deadlock Watchdog: if tiles got dropped or worker generation desynced, unblock the loop
+            if (pending > 0 && now - lastRecolorScheduledAt > 350) {
+                options.resetPendingRecolorTiles?.();
+            }
+
+            if (
+                options.getCanPulseRecolor() &&
+                options.getPendingRecolorTiles() === 0 &&
+                options.getTileCount() > 0
+            ) {
+                if (now - lastAudioRecolorAt >= AUDIO_RECOLOR_INTERVAL_MS) {
+                    const view = options.getView();
+                    view.colorOffset = (view.colorOffset + AUDIO_OFFSET_STEP + level * 0.032) % 1;
+                    lastRecolorScheduledAt = now;
+                    lastAudioRecolorAt = now;
+                    options.scheduleRecolor();
+                }
+            }
         }
 
         audioPulseRaf = requestAnimationFrame(runAudioPulse);
@@ -242,8 +288,26 @@ export function createAudioControls(options: {
         const volumeDisplay = document.getElementById('song-volume-display');
         const progressSlider = document.getElementById('song-progress-slider') as HTMLInputElement | null;
 
+        const inplaceRadio = document.getElementById('pulse-mode-inplace') as HTMLInputElement | null;
+        const cyclingRadio = document.getElementById('pulse-mode-cycling') as HTMLInputElement | null;
+
         updateAudioSensitivityUI();
         updateAudioPulseUI();
+        updatePulseModeUI();
+
+        inplaceRadio?.addEventListener('change', () => {
+            if (inplaceRadio.checked) {
+                pulseEffectMode = 'inplace';
+                updatePulseModeUI();
+            }
+        });
+
+        cyclingRadio?.addEventListener('change', () => {
+            if (cyclingRadio.checked) {
+                pulseEffectMode = 'cycling';
+                updatePulseModeUI();
+            }
+        });
 
         if (volumeSlider) {
             volumeSlider.value = audioVisualizer.getVolume().toFixed(2);
@@ -315,6 +379,11 @@ export function createAudioControls(options: {
 
     return {
         bindSettingsControls,
+        getPulseMode: () => pulseEffectMode,
+        setPulseMode: (mode: PulseEffectMode) => {
+            pulseEffectMode = mode;
+            updatePulseModeUI();
+        },
         isAudioPulseActive: () => audioPulseActive || audioVisualizer.isActive(),
         isColorAnimActive: () => colorAnimActive,
         stop,

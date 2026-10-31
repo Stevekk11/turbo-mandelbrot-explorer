@@ -157,6 +157,24 @@
              class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"/>
     </div>
 
+    <!-- Pulse Effect Style Toggle & Motion Sickness Warning -->
+    <label class="ctrl-label" style="margin-top:0.75rem">Pulse Effect Style</label>
+    <div style="display:flex;flex-direction:column;gap:0.4rem;margin-bottom:0.5rem">
+      <label style="display:flex;align-items:center;gap:0.5rem;font-size:0.75rem;cursor:pointer">
+        <input type="radio" name="pulse-mode" value="inplace" id="pulse-mode-inplace" checked
+               style="accent-color:var(--clr-accent)"/>
+        <span>✨ In-place Pulse <span style="font-size:0.65rem;color:#86efac">(Comfort / Safe)</span></span>
+      </label>
+      <label style="display:flex;align-items:center;gap:0.5rem;font-size:0.75rem;cursor:pointer">
+        <input type="radio" name="pulse-mode" value="cycling" id="pulse-mode-cycling"
+               style="accent-color:var(--clr-accent2)"/>
+        <span>🌀 Color Cycling <span style="font-size:0.65rem;color:#fca5a5">(⚠️ Motion sickness risk)</span></span>
+      </label>
+      <div id="motion-sickness-alert" class="motion-sickness-warning" style="display:none">
+        ⚠️ <strong>Motion Sickness Alert:</strong> Continuous color cycling produces rotating optical flow across fractal contours that can cause dizziness, disorientation, or motion sickness.
+      </div>
+    </div>
+
     <!-- Song Player -->
     <div class="section-title" style="margin-top:0.75rem">🎵 Song Player</div>
     <div style="display:flex;gap:0.35rem;margin-top:0.35rem">
