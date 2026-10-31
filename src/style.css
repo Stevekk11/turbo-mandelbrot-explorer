@@ -254,7 +254,8 @@ html, body {
   color: #a5b4fc;
 }
 
-#audio-visualizer-btn.mic-live {
+#audio-visualizer-btn.mic-live,
+#song-play-btn.mic-live {
   border-color: color-mix(in srgb, var(--clr-accent2) 35%, #f8fafc);
   box-shadow: 0 0 calc(6px + (var(--audio-level) * 20px)) rgba(215, 15, 65, 0.5);
 }
@@ -265,6 +266,23 @@ html, body {
   box-shadow: 0 0 calc(3px + (var(--audio-level) * 16px)) rgba(215, 15, 65, 0.4);
 }
 .btn-icon {
+  padding: 0.3rem 0.5rem;
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.song-name-display {
+  margin-top: 0.35rem;
+  font-size: 0.65rem;
+  color: var(--clr-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.btn-icon-unused {
   padding: 0.3rem 0.5rem;
 }
 

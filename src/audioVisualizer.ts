@@ -1,7 +1,25 @@
+export type AudioSourceMode = 'mic' | 'song' | null;
+
 export interface AudioVisualizerController {
     start(): Promise<void>;
 
     stop(): void;
+
+    loadSong(file: File): void;
+
+    playSong(): Promise<void>;
+
+    pauseSong(): void;
+
+    hasSong(): boolean;
+
+    isSongPlaying(): boolean;
+
+    getSongName(): string | null;
+
+    getMode(): AudioSourceMode;
+
+    onSongStateChange(cb: (playing: boolean) => void): void;
 
     sampleLevel(): number;
 
@@ -15,7 +33,13 @@ const DEFAULT_SENSITIVITY = 1.4;
 export function createAudioVisualizer(): AudioVisualizerController {
     let audioContext: AudioContext | null = null;
     let mediaStream: MediaStream | null = null;
-    let source: MediaStreamAudioSourceNode | null = null;
+    let micSource: MediaStreamAudioSourceNode | null = null;
+    let audioEl: HTMLAudioElement | null = null;
+    let songSource: MediaElementAudioSourceNode | null = null;
+    let songObjectUrl: string | null = null;
+    let songName: string | null = null;
+    let songStateListeners: Array<(playing: boolean) => void> = [];
+
     let lowPass: BiquadFilterNode | null = null;
     let analyser: AnalyserNode | null = null;
 
@@ -24,21 +48,97 @@ export function createAudioVisualizer(): AudioVisualizerController {
     let noiseFloor = 0.03;
     let sensitivity = DEFAULT_SENSITIVITY;
     let active = false;
+    let mode: AudioSourceMode = null;
 
-    function cleanupGraph() {
-        source?.disconnect();
-        lowPass?.disconnect();
-        analyser?.disconnect();
-        source = null;
-        lowPass = null;
-        analyser = null;
-        freqData = null;
+    function notifySongState(playing: boolean) {
+        for (const cb of songStateListeners) {
+            cb(playing);
+        }
+    }
+
+    function ensureAudioElement(): HTMLAudioElement {
+        if (!audioEl) {
+            audioEl = new Audio();
+            audioEl.preload = 'auto';
+            audioEl.addEventListener('ended', () => {
+                if (mode === 'song') {
+                    active = false;
+                    mode = null;
+                    smoothedLevel = 0;
+                }
+                notifySongState(false);
+            });
+            audioEl.addEventListener('pause', () => {
+                if (mode === 'song') {
+                    active = false;
+                    mode = null;
+                    smoothedLevel = 0;
+                }
+                notifySongState(false);
+            });
+            audioEl.addEventListener('play', () => {
+                notifySongState(true);
+            });
+        }
+        return audioEl;
+    }
+
+    function ensureAudioContext(): AudioContext {
+        const Ctor = window.AudioContext || (window as typeof window & {
+            webkitAudioContext?: typeof AudioContext
+        }).webkitAudioContext;
+        if (!Ctor) {
+            throw new Error('Web Audio API is not supported in this browser.');
+        }
+        if (!audioContext) {
+            audioContext = new Ctor();
+        }
+        return audioContext;
+    }
+
+    function ensureAnalyserChain(ctx: AudioContext) {
+        if (!lowPass || !analyser || !freqData) {
+            const filter = ctx.createBiquadFilter();
+            filter.type = 'lowpass';
+            filter.frequency.value = 250;
+            filter.Q.value = 1.0;
+
+            const analyzerNode = ctx.createAnalyser();
+            analyzerNode.fftSize = 1024;
+            analyzerNode.smoothingTimeConstant = 0.7;
+
+            filter.connect(analyzerNode);
+
+            lowPass = filter;
+            analyser = analyzerNode;
+            freqData = new Uint8Array(analyzerNode.frequencyBinCount) as Uint8Array<ArrayBuffer>;
+        }
+    }
+
+    function disconnectMic() {
+        micSource?.disconnect();
+        micSource = null;
+        if (mediaStream) {
+            mediaStream.getTracks().forEach(track => track.stop());
+            mediaStream = null;
+        }
     }
 
     async function start() {
-        if (active && audioContext && analyser) {
+        if (active && mode === 'mic' && audioContext && analyser) {
             if (audioContext.state === 'suspended') await audioContext.resume();
             return;
+        }
+
+        if (audioEl && !audioEl.paused) {
+            audioEl.pause();
+        }
+        if (songSource && lowPass) {
+            try {
+                songSource.disconnect(lowPass);
+            } catch {
+                // ignore if not connected
+            }
         }
 
         const stream = await navigator.mediaDevices.getUserMedia({
@@ -51,51 +151,93 @@ export function createAudioVisualizer(): AudioVisualizerController {
             video: false,
         });
 
-        const Ctor = window.AudioContext || (window as typeof window & {
-            webkitAudioContext?: typeof AudioContext
-        }).webkitAudioContext;
-        if (!Ctor) {
+        let ctx: AudioContext;
+        try {
+            ctx = ensureAudioContext();
+        } catch (err) {
             stream.getTracks().forEach(track => track.stop());
-            throw new Error('Web Audio API is not supported in this browser.');
+            throw err;
         }
 
-        const ctx = audioContext ?? new Ctor();
         if (ctx.state === 'suspended') await ctx.resume();
 
-        audioContext = ctx;
+        disconnectMic();
+        ensureAnalyserChain(ctx);
+
         mediaStream = stream;
-
         const streamSource = ctx.createMediaStreamSource(stream);
-        const filter = ctx.createBiquadFilter();
-        filter.type = 'lowpass';
-        filter.frequency.value = 250;
-        filter.Q.value = 1.0;
-
-        const analyzerNode = ctx.createAnalyser();
-        analyzerNode.fftSize = 1024;
-        analyzerNode.smoothingTimeConstant = 0.7;
-
-        streamSource.connect(filter);
-        filter.connect(analyzerNode);
-
-        source = streamSource;
-        lowPass = filter;
-        analyser = analyzerNode;
-        freqData = new Uint8Array(analyzerNode.frequencyBinCount) as Uint8Array<ArrayBuffer>;
+        streamSource.connect(lowPass!);
+        micSource = streamSource;
 
         smoothedLevel = 0;
         noiseFloor = 0.03;
+        mode = 'mic';
         active = true;
+    }
+
+    function loadSong(file: File) {
+        const el = ensureAudioElement();
+        if (!el.paused) {
+            el.pause();
+        }
+        if (songObjectUrl) {
+            URL.revokeObjectURL(songObjectUrl);
+        }
+        songObjectUrl = URL.createObjectURL(file);
+        songName = file.name;
+        el.src = songObjectUrl;
+        el.load();
+    }
+
+    async function playSong() {
+        const el = ensureAudioElement();
+        if (!el.src) {
+            throw new Error('No song loaded.');
+        }
+
+        disconnectMic();
+
+        const ctx = ensureAudioContext();
+        if (ctx.state === 'suspended') await ctx.resume();
+
+        ensureAnalyserChain(ctx);
+
+        if (!songSource) {
+            songSource = ctx.createMediaElementSource(el);
+        } else {
+            songSource.disconnect();
+        }
+
+        songSource.connect(lowPass!);
+        songSource.connect(ctx.destination);
+
+        smoothedLevel = 0;
+        noiseFloor = 0.03;
+        mode = 'song';
+        active = true;
+
+        await el.play();
+    }
+
+    function pauseSong() {
+        if (audioEl && !audioEl.paused) {
+            audioEl.pause();
+        }
+        if (mode === 'song') {
+            active = false;
+            mode = null;
+            smoothedLevel = 0;
+        }
     }
 
     function stop() {
         active = false;
+        mode = null;
         smoothedLevel = 0;
         noiseFloor = 0.03;
-        cleanupGraph();
-        if (mediaStream) {
-            mediaStream.getTracks().forEach(track => track.stop());
-            mediaStream = null;
+        disconnectMic();
+        if (audioEl && !audioEl.paused) {
+            audioEl.pause();
         }
     }
 
@@ -141,9 +283,37 @@ export function createAudioVisualizer(): AudioVisualizerController {
         return active;
     }
 
+    function hasSong() {
+        return Boolean(songObjectUrl && audioEl);
+    }
+
+    function isSongPlaying() {
+        return Boolean(audioEl && !audioEl.paused && !audioEl.ended);
+    }
+
+    function getSongName() {
+        return songName;
+    }
+
+    function getMode() {
+        return mode;
+    }
+
+    function onSongStateChange(cb: (playing: boolean) => void) {
+        songStateListeners.push(cb);
+    }
+
     return {
         start,
         stop,
+        loadSong,
+        playSong,
+        pauseSong,
+        hasSong,
+        isSongPlaying,
+        getSongName,
+        getMode,
+        onSongStateChange,
         sampleLevel,
         setSensitivity,
         isActive,

@@ -26,20 +26,89 @@ export function createAudioControls(options: {
         if (display) display.textContent = audioSensitivity.toFixed(1);
     }
 
+    function updateSongUI() {
+        const hasSong = audioVisualizer.hasSong();
+        const isPlaying = audioVisualizer.isSongPlaying();
+        const songName = audioVisualizer.getSongName();
+
+        const playBtn = document.getElementById('song-play-btn') as HTMLButtonElement | null;
+        const settingsPlayBtn = document.getElementById('settings-song-play-btn') as HTMLButtonElement | null;
+        const songNameEl = document.getElementById('song-name-display');
+
+        if (playBtn) {
+            playBtn.style.display = hasSong ? 'inline-flex' : 'none';
+            playBtn.classList.toggle('btn-active', isPlaying);
+            playBtn.classList.toggle('mic-live', isPlaying);
+            playBtn.innerHTML = isPlaying
+                ? '⏸️ <span class="btn-label">Pause</span>'
+                : '▶️ <span class="btn-label">Play</span>';
+            playBtn.title = songName ? `${isPlaying ? 'Pause' : 'Play'} ${songName}` : 'Play/Pause song';
+        }
+
+        if (settingsPlayBtn) {
+            settingsPlayBtn.disabled = !hasSong;
+            settingsPlayBtn.classList.toggle('btn-active', isPlaying);
+            settingsPlayBtn.textContent = isPlaying ? '⏸️ Pause Song' : '▶️ Play Song';
+        }
+
+        if (songNameEl) {
+            songNameEl.textContent = songName ?? 'No song selected';
+            songNameEl.title = songName ?? '';
+        }
+    }
+
     function updateAudioPulseUI(status?: string) {
         const btn = document.getElementById('audio-visualizer-btn');
         const checkbox = document.getElementById('audio-visualizer-checkbox') as HTMLInputElement | null;
         const levelText = document.getElementById('audio-level-text');
+        const mode = audioVisualizer.getMode();
+        const isMicActive = audioPulseActive && mode === 'mic';
 
         if (btn) {
             btn.classList.toggle('btn-active', audioPulseActive);
             btn.classList.toggle('mic-live', audioPulseActive);
         }
-        if (checkbox) checkbox.checked = audioPulseActive;
+        if (checkbox) checkbox.checked = isMicActive;
         if (levelText) {
-            levelText.textContent = status ?? (audioPulseActive ? 'listening...' : 'mic off');
+            if (status) {
+                levelText.textContent = status;
+            } else if (audioPulseActive) {
+                levelText.textContent = mode === 'song' ? 'playing...' : 'listening...';
+            } else {
+                levelText.textContent = audioVisualizer.hasSong() ? 'song paused' : 'mic off';
+            }
         }
+        updateSongUI();
     }
+
+    function startPulseLoop() {
+        if (colorAnimActive) {
+            colorAnimActive = false;
+            cancelAnimationFrame(colorAnimRaf);
+            document.getElementById('color-anim-btn')?.classList.remove('btn-active');
+        }
+        audioPulseActive = true;
+        cancelAnimationFrame(audioPulseRaf);
+        updateAudioPulseUI();
+        runAudioPulse();
+    }
+
+    function stopPulseLoop(status?: string) {
+        audioPulseActive = false;
+        cancelAnimationFrame(audioPulseRaf);
+        document.documentElement.style.setProperty('--audio-level', '0');
+        updateAudioPulseUI(status);
+    }
+
+    audioVisualizer.onSongStateChange((playing) => {
+        if (playing) {
+            startPulseLoop();
+        } else if (audioVisualizer.getMode() !== 'mic') {
+            stopPulseLoop();
+        } else {
+            updateSongUI();
+        }
+    });
 
     function runAudioPulse() {
         if (!audioPulseActive) return;
@@ -48,7 +117,10 @@ export function createAudioControls(options: {
         document.documentElement.style.setProperty('--audio-level', level.toFixed(3));
 
         const levelText = document.getElementById('audio-level-text');
-        if (levelText) levelText.textContent = `${Math.round(level * 100)}%`;
+        if (levelText) {
+            const prefix = audioVisualizer.getMode() === 'song' ? '🎵 ' : '';
+            levelText.textContent = `${prefix}${Math.round(level * 100)}%`;
+        }
 
         if (
             options.getCanPulseRecolor() &&
@@ -70,33 +142,63 @@ export function createAudioControls(options: {
     async function setAudioPulseEnabled(enabled: boolean) {
         if (enabled) {
             try {
-                if (colorAnimActive) {
-                    colorAnimActive = false;
-                    cancelAnimationFrame(colorAnimRaf);
-                    document.getElementById('color-anim-btn')?.classList.remove('btn-active');
-                }
                 audioVisualizer.setSensitivity(audioSensitivity);
                 await audioVisualizer.start();
-                audioPulseActive = true;
-                updateAudioPulseUI();
-                runAudioPulse();
+                startPulseLoop();
             } catch {
-                audioPulseActive = false;
-                updateAudioPulseUI('mic unavailable');
-                document.documentElement.style.setProperty('--audio-level', '0');
+                audioVisualizer.stop();
+                stopPulseLoop('mic unavailable');
             }
             return;
         }
 
-        audioPulseActive = false;
-        cancelAnimationFrame(audioPulseRaf);
         audioVisualizer.stop();
-        document.documentElement.style.setProperty('--audio-level', '0');
-        updateAudioPulseUI();
+        stopPulseLoop();
     }
 
     function toggleAudioPulse() {
-        void setAudioPulseEnabled(!audioPulseActive);
+        if (audioPulseActive) {
+            void setAudioPulseEnabled(false);
+        } else if (audioVisualizer.hasSong()) {
+            void playLoadedSong();
+        } else {
+            void setAudioPulseEnabled(true);
+        }
+    }
+
+    async function playLoadedSong() {
+        if (!audioVisualizer.hasSong()) return;
+        try {
+            audioVisualizer.setSensitivity(audioSensitivity);
+            await audioVisualizer.playSong();
+            startPulseLoop();
+        } catch {
+            stopPulseLoop('playback error');
+        }
+    }
+
+    function toggleSongPlayback() {
+        if (!audioVisualizer.hasSong()) {
+            triggerSongUpload();
+            return;
+        }
+        if (audioVisualizer.isSongPlaying()) {
+            audioVisualizer.pauseSong();
+            stopPulseLoop();
+        } else {
+            void playLoadedSong();
+        }
+    }
+
+    function triggerSongUpload() {
+        const fileInput = document.getElementById('audio-file-input') as HTMLInputElement | null;
+        fileInput?.click();
+    }
+
+    async function handleSongFileSelected(file: File) {
+        audioVisualizer.loadSong(file);
+        updateSongUI();
+        await playLoadedSong();
     }
 
     function runColorAnim() {
@@ -120,12 +222,15 @@ export function createAudioControls(options: {
     function bindSettingsControls() {
         const audioVisualizerCheckbox = document.getElementById('audio-visualizer-checkbox') as HTMLInputElement | null;
         const audioSensitivitySlider = document.getElementById('audio-sensitivity-slider') as HTMLInputElement | null;
+        const fileInput = document.getElementById('audio-file-input') as HTMLInputElement | null;
+        const settingsUploadBtn = document.getElementById('settings-song-upload-btn');
+        const settingsPlayBtn = document.getElementById('settings-song-play-btn');
 
         updateAudioSensitivityUI();
         updateAudioPulseUI();
 
         if (audioVisualizerCheckbox) {
-            audioVisualizerCheckbox.checked = audioPulseActive;
+            audioVisualizerCheckbox.checked = audioPulseActive && audioVisualizer.getMode() === 'mic';
             audioVisualizerCheckbox.addEventListener('change', () => {
                 void setAudioPulseEnabled(audioVisualizerCheckbox.checked);
             });
@@ -139,6 +244,19 @@ export function createAudioControls(options: {
                 updateAudioSensitivityUI();
             });
         }
+
+        if (fileInput) {
+            fileInput.addEventListener('change', () => {
+                const file = fileInput.files?.[0];
+                if (file) {
+                    void handleSongFileSelected(file);
+                }
+                fileInput.value = '';
+            });
+        }
+
+        settingsUploadBtn?.addEventListener('click', triggerSongUpload);
+        settingsPlayBtn?.addEventListener('click', toggleSongPlayback);
     }
 
     function stop() {
@@ -154,6 +272,8 @@ export function createAudioControls(options: {
         stop,
         toggleAudioPulse,
         toggleColorAnim,
+        toggleSongPlayback,
+        triggerSongUpload,
         updateAudioPulseUI,
         updateAudioSensitivityUI,
     };

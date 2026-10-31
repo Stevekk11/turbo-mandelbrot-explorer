@@ -17,6 +17,8 @@ export function createUiControls(options: {
         bindSettingsControls: () => void;
         toggleAudioPulse: () => void;
         toggleColorAnim: () => void;
+        toggleSongPlayback: () => void;
+        triggerSongUpload: () => void;
         updateAudioSensitivityUI: () => void;
         updateAudioPulseUI: (status?: string) => void;
     };
@@ -345,6 +347,8 @@ export function createUiControls(options: {
         document.getElementById('screenshot-btn')?.addEventListener('click', deps.saveScreenshot);
         document.getElementById('color-anim-btn')?.addEventListener('click', options.audioControls.toggleColorAnim);
         document.getElementById('audio-visualizer-btn')?.addEventListener('click', options.audioControls.toggleAudioPulse);
+        document.getElementById('song-upload-btn')?.addEventListener('click', options.audioControls.triggerSongUpload);
+        document.getElementById('song-play-btn')?.addEventListener('click', options.audioControls.toggleSongPlayback);
         document.getElementById('shadows-btn')?.addEventListener('click', deps.toggleShadows);
         document.getElementById('random-palette-btn')?.addEventListener('click', deps.randomizePalette);
         document.getElementById('measure-btn')?.addEventListener('click', options.overlays.toggleMeasureMode);

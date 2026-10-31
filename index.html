@@ -23,8 +23,13 @@
       <button id="grid-btn" class="btn">▦ <span class="btn-label">Grid</span></button>
       <button id="julia-btn" class="btn">🌀 <span class="btn-label"></span>J</button>
       <button id="color-anim-btn" class="btn">🌈 <span class="btn-label">Animate</span></button>
-      <button id="audio-visualizer-btn" class="btn" title="Mic reactive color pulse">🎤 <span
+      <button id="audio-visualizer-btn" class="btn" title="Audio reactive color pulse">🎤 <span
               class="btn-label">Pulse</span></button>
+      <button id="song-upload-btn" class="btn" title="Upload song for audio pulse">🎵 <span
+              class="btn-label">Song</span></button>
+      <button id="song-play-btn" class="btn" title="Play/Pause song" style="display:none">▶️ <span
+              class="btn-label">Play</span></button>
+      <input id="audio-file-input" type="file" accept="audio/*" style="display:none" />
       <button id="shadows-btn"   class="btn">💡 <span class="btn-label">Shadows</span></button>
       <button id="reset-btn"     class="btn">🏠 <span class="btn-label">Reset</span></button>
       <button id="screenshot-btn" class="btn btn-icon" title="Save PNG">📸</button>
@@ -145,11 +150,16 @@
     <div>
       <label class="block text-xs uppercase tracking-wider text-gray-400 mb-1 flex justify-between"
              for="audio-sensitivity-slider">
-        <span>Mic Sensitivity</span>
+        <span>Sensitivity</span>
         <span id="audio-sensitivity-display">1.4</span>×
       </label>
       <input id="audio-sensitivity-slider" type="range" min="0.5" max="4" step="0.1" value="1.4"
              class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"/>
+      <div style="display:flex;gap:0.35rem;margin-top:0.5rem">
+        <button id="settings-song-upload-btn" class="btn" style="flex:1;justify-content:center">🎵 Upload Song</button>
+        <button id="settings-song-play-btn" class="btn" style="flex:1;justify-content:center" disabled>▶️ Play Song</button>
+      </div>
+      <div id="song-name-display" class="song-name-display">No song selected</div>
     </div>
 
     <!-- Julia Set -->
