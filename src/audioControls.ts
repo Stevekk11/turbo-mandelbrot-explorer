@@ -4,10 +4,18 @@ import type {ViewState} from './types';
 const AUDIO_RECOLOR_INTERVAL_MS = 33;
 const AUDIO_OFFSET_STEP = 0.0012;
 
+function formatTime(totalSeconds: number): string {
+    if (!Number.isFinite(totalSeconds) || totalSeconds <= 0) return '0:00';
+    const m = Math.floor(totalSeconds / 60);
+    const s = Math.floor(totalSeconds % 60);
+    return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
 export function createAudioControls(options: {
     getView: () => ViewState;
     scheduleRecolor: () => void;
     getPendingRecolorTiles: () => number;
+    resetPendingRecolorTiles?: () => void;
     getTileCount: () => number;
     getCanPulseRecolor: () => boolean;
 }) {
@@ -18,6 +26,8 @@ export function createAudioControls(options: {
     let audioPulseActive = false;
     let audioSensitivity = 1.4;
     let lastAudioRecolorAt = 0;
+    let lastRecolorScheduledAt = 0;
+    let isSeekingSong = false;
 
     function updateAudioSensitivityUI() {
         const slider = document.getElementById('audio-sensitivity-slider') as HTMLInputElement | null;
@@ -34,6 +44,7 @@ export function createAudioControls(options: {
         const playBtn = document.getElementById('song-play-btn') as HTMLButtonElement | null;
         const settingsPlayBtn = document.getElementById('settings-song-play-btn') as HTMLButtonElement | null;
         const songNameEl = document.getElementById('song-name-display');
+        const progressContainer = document.getElementById('song-progress-container');
 
         if (playBtn) {
             playBtn.style.display = hasSong ? 'inline-flex' : 'none';
@@ -48,32 +59,41 @@ export function createAudioControls(options: {
         if (settingsPlayBtn) {
             settingsPlayBtn.disabled = !hasSong;
             settingsPlayBtn.classList.toggle('btn-active', isPlaying);
-            settingsPlayBtn.textContent = isPlaying ? '⏸️ Pause Song' : '▶️ Play Song';
+            settingsPlayBtn.textContent = isPlaying ? '⏸️ Pause' : '▶️ Play';
         }
 
         if (songNameEl) {
-            songNameEl.textContent = songName ?? 'No song selected';
+            songNameEl.textContent = songName ?? 'No song loaded';
             songNameEl.title = songName ?? '';
+        }
+
+        if (progressContainer) {
+            progressContainer.style.display = hasSong ? 'block' : 'none';
         }
     }
 
     function updateAudioPulseUI(status?: string) {
-        const btn = document.getElementById('audio-visualizer-btn');
-        const checkbox = document.getElementById('audio-visualizer-checkbox') as HTMLInputElement | null;
+        const micBtn = document.getElementById('audio-visualizer-btn');
+        const micCheckbox = document.getElementById('audio-visualizer-checkbox') as HTMLInputElement | null;
         const levelText = document.getElementById('audio-level-text');
         const mode = audioVisualizer.getMode();
-        const isMicActive = audioPulseActive && mode === 'mic';
+        const isMicActive = audioVisualizer.isMicActive();
 
-        if (btn) {
-            btn.classList.toggle('btn-active', audioPulseActive);
-            btn.classList.toggle('mic-live', audioPulseActive);
+        if (micBtn) {
+            micBtn.classList.toggle('btn-active', isMicActive);
+            micBtn.classList.toggle('mic-live', isMicActive);
         }
-        if (checkbox) checkbox.checked = isMicActive;
+        if (micCheckbox) {
+            micCheckbox.checked = isMicActive;
+        }
+
         if (levelText) {
             if (status) {
                 levelText.textContent = status;
-            } else if (audioPulseActive) {
-                levelText.textContent = mode === 'song' ? 'playing...' : 'listening...';
+            } else if (mode === 'song') {
+                levelText.textContent = '🎵 song';
+            } else if (isMicActive) {
+                levelText.textContent = '🎤 listening...';
             } else {
                 levelText.textContent = audioVisualizer.hasSong() ? 'song paused' : 'mic off';
             }
@@ -94,32 +114,55 @@ export function createAudioControls(options: {
     }
 
     function stopPulseLoop(status?: string) {
-        audioPulseActive = false;
-        cancelAnimationFrame(audioPulseRaf);
-        document.documentElement.style.setProperty('--audio-level', '0');
+        if (!audioVisualizer.isActive()) {
+            audioPulseActive = false;
+            cancelAnimationFrame(audioPulseRaf);
+            document.documentElement.style.setProperty('--audio-level', '0');
+        }
         updateAudioPulseUI(status);
     }
 
     audioVisualizer.onSongStateChange((playing) => {
         if (playing) {
             startPulseLoop();
-        } else if (audioVisualizer.getMode() !== 'mic') {
+        } else if (!audioVisualizer.isMicActive()) {
             stopPulseLoop();
         } else {
             updateSongUI();
         }
     });
 
+    audioVisualizer.onSongTimeUpdate((current, duration) => {
+        if (isSeekingSong) return;
+        const slider = document.getElementById('song-progress-slider') as HTMLInputElement | null;
+        const timeDisplay = document.getElementById('song-time-display');
+
+        if (slider && duration > 0) {
+            slider.value = ((current / duration) * 100).toFixed(1);
+        }
+        if (timeDisplay) {
+            timeDisplay.textContent = `${formatTime(current)} / ${formatTime(duration)}`;
+        }
+    });
+
     function runAudioPulse() {
-        if (!audioPulseActive) return;
+        if (!audioPulseActive && !audioVisualizer.isActive()) return;
 
         const level = audioVisualizer.sampleLevel();
         document.documentElement.style.setProperty('--audio-level', level.toFixed(3));
 
         const levelText = document.getElementById('audio-level-text');
         if (levelText) {
-            const prefix = audioVisualizer.getMode() === 'song' ? '🎵 ' : '';
+            const prefix = audioVisualizer.getMode() === 'song' ? '🎵 ' : '🎤 ';
             levelText.textContent = `${prefix}${Math.round(level * 100)}%`;
+        }
+
+        const now = performance.now();
+        const pending = options.getPendingRecolorTiles();
+
+        // Deadlock Watchdog: if tiles got dropped or worker generation desynced, unblock the loop
+        if (pending > 0 && now - lastRecolorScheduledAt > 350) {
+            options.resetPendingRecolorTiles?.();
         }
 
         if (
@@ -127,43 +170,38 @@ export function createAudioControls(options: {
             options.getPendingRecolorTiles() === 0 &&
             options.getTileCount() > 0
         ) {
-            const now = performance.now();
             if (now - lastAudioRecolorAt >= AUDIO_RECOLOR_INTERVAL_MS) {
                 const view = options.getView();
-                view.colorOffset = (view.colorOffset + AUDIO_OFFSET_STEP + level * 0.03) % 1;
-                options.scheduleRecolor();
+                view.colorOffset = (view.colorOffset + AUDIO_OFFSET_STEP + level * 0.032) % 1;
+                lastRecolorScheduledAt = now;
                 lastAudioRecolorAt = now;
+                options.scheduleRecolor();
             }
         }
 
         audioPulseRaf = requestAnimationFrame(runAudioPulse);
     }
 
-    async function setAudioPulseEnabled(enabled: boolean) {
+    async function setMicEnabled(enabled: boolean) {
         if (enabled) {
             try {
                 audioVisualizer.setSensitivity(audioSensitivity);
-                await audioVisualizer.start();
+                await audioVisualizer.startMic();
                 startPulseLoop();
             } catch {
-                audioVisualizer.stop();
+                audioVisualizer.stopMic();
                 stopPulseLoop('mic unavailable');
             }
             return;
         }
 
-        audioVisualizer.stop();
+        audioVisualizer.stopMic();
         stopPulseLoop();
     }
 
     function toggleAudioPulse() {
-        if (audioPulseActive) {
-            void setAudioPulseEnabled(false);
-        } else if (audioVisualizer.hasSong()) {
-            void playLoadedSong();
-        } else {
-            void setAudioPulseEnabled(true);
-        }
+        // Toggles microphone pulse directly
+        void setMicEnabled(!audioVisualizer.isMicActive());
     }
 
     async function playLoadedSong() {
@@ -184,7 +222,9 @@ export function createAudioControls(options: {
         }
         if (audioVisualizer.isSongPlaying()) {
             audioVisualizer.pauseSong();
-            stopPulseLoop();
+            if (!audioVisualizer.isMicActive()) {
+                stopPulseLoop();
+            }
         } else {
             void playLoadedSong();
         }
@@ -225,14 +265,49 @@ export function createAudioControls(options: {
         const fileInput = document.getElementById('audio-file-input') as HTMLInputElement | null;
         const settingsUploadBtn = document.getElementById('settings-song-upload-btn');
         const settingsPlayBtn = document.getElementById('settings-song-play-btn');
+        const volumeSlider = document.getElementById('song-volume-slider') as HTMLInputElement | null;
+        const volumeDisplay = document.getElementById('song-volume-display');
+        const progressSlider = document.getElementById('song-progress-slider') as HTMLInputElement | null;
 
         updateAudioSensitivityUI();
         updateAudioPulseUI();
 
+        if (volumeSlider) {
+            volumeSlider.value = audioVisualizer.getVolume().toFixed(2);
+            if (volumeDisplay) volumeDisplay.textContent = `${Math.round(audioVisualizer.getVolume() * 100)}%`;
+            volumeSlider.addEventListener('input', () => {
+                const val = parseFloat(volumeSlider.value) || 0;
+                audioVisualizer.setVolume(val);
+                if (volumeDisplay) volumeDisplay.textContent = `${Math.round(val * 100)}%`;
+            });
+        }
+
+        if (progressSlider) {
+            progressSlider.addEventListener('mousedown', () => {
+                isSeekingSong = true;
+            });
+            progressSlider.addEventListener('touchstart', () => {
+                isSeekingSong = true;
+            }, {passive: true});
+
+            const handleSeek = () => {
+                const percent = parseFloat(progressSlider.value) || 0;
+                const dur = audioVisualizer.getSongDuration();
+                if (dur > 0) {
+                    audioVisualizer.seekSong((percent / 100) * dur);
+                }
+                isSeekingSong = false;
+            };
+
+            progressSlider.addEventListener('change', handleSeek);
+            progressSlider.addEventListener('mouseup', handleSeek);
+            progressSlider.addEventListener('touchend', handleSeek);
+        }
+
         if (audioVisualizerCheckbox) {
-            audioVisualizerCheckbox.checked = audioPulseActive && audioVisualizer.getMode() === 'mic';
+            audioVisualizerCheckbox.checked = audioVisualizer.isMicActive();
             audioVisualizerCheckbox.addEventListener('change', () => {
-                void setAudioPulseEnabled(audioVisualizerCheckbox.checked);
+                void setMicEnabled(audioVisualizerCheckbox.checked);
             });
         }
 
@@ -267,7 +342,7 @@ export function createAudioControls(options: {
 
     return {
         bindSettingsControls,
-        isAudioPulseActive: () => audioPulseActive,
+        isAudioPulseActive: () => audioPulseActive || audioVisualizer.isActive(),
         isColorAnimActive: () => colorAnimActive,
         stop,
         toggleAudioPulse,

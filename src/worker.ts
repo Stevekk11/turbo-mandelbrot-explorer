@@ -776,7 +776,19 @@ self.onmessage = async (e: MessageEvent<ToWorkerMessage>) => {
 
   if (msg.type === 'recolor') {
     const buf = recolorTile(msg);
-    if (!buf) return;
+    if (!buf) {
+      (self as unknown as Worker).postMessage({
+        type: 'result',
+        taskId: msg.taskId,
+        gen: msg.gen,
+        tileX: msg.tileX,
+        tileY: msg.tileY,
+        tileW: msg.tileW,
+        tileH: msg.tileH,
+        imageData: null,
+      });
+      return;
+    }
     (self as unknown as Worker).postMessage(
         {
           type: 'result',

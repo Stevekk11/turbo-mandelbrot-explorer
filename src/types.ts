@@ -118,7 +118,7 @@ export interface RenderResult {
   tileW: number;
   tileH: number;
   /** RGBA pixel data for the tile */
-  imageData: ArrayBuffer;
+  imageData: ArrayBuffer | null;
 }
 
 /** Worker initialization message */

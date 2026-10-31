@@ -33,6 +33,11 @@ html, body {
   cursor: crosshair;
   display: block;
   z-index: 0;
+  transform: scale(calc(1 + var(--audio-level, 0) * 0.016));
+  filter: brightness(calc(1 + var(--audio-level, 0) * 0.22)) contrast(calc(1 + var(--audio-level, 0) * 0.12));
+  transform-origin: center center;
+  transition: transform 0.05s ease-out, filter 0.05s ease-out;
+  will-change: transform, filter;
 }
 
 /* ── Top bar ────────────────────────────────────────────────────── */
@@ -257,13 +262,13 @@ html, body {
 #audio-visualizer-btn.mic-live,
 #song-play-btn.mic-live {
   border-color: color-mix(in srgb, var(--clr-accent2) 35%, #f8fafc);
-  box-shadow: 0 0 calc(6px + (var(--audio-level) * 20px)) rgba(215, 15, 65, 0.5);
+  box-shadow: 0 0 calc(6px + (var(--audio-level, 0) * 20px)) rgba(215, 15, 65, 0.5);
 }
 
 #audio-level-chip {
   color: #fda4af;
   border-color: color-mix(in srgb, var(--clr-accent2) 55%, #111827);
-  box-shadow: 0 0 calc(3px + (var(--audio-level) * 16px)) rgba(215, 15, 65, 0.4);
+  box-shadow: 0 0 calc(3px + (var(--audio-level, 0) * 16px)) rgba(215, 15, 65, 0.4);
 }
 .btn-icon {
   padding: 0.3rem 0.5rem;
@@ -276,14 +281,14 @@ html, body {
 
 .song-name-display {
   margin-top: 0.35rem;
-  font-size: 0.65rem;
+  font-size: 0.68rem;
   color: var(--clr-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-.btn-icon-unused {
-  padding: 0.3rem 0.5rem;
+  padding: 0.25rem 0.5rem;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 4px;
 }
 
 /* ── HUD counters ───────────────────────────────────────────────── */
@@ -457,7 +462,7 @@ kbd {
   background-clip: text;
 }
 
-/* ── Responsive tweaks ──────────────────────────────────────────── */
+/* ── Responsive tweaks ──────────────────────────────────── */
 @media (max-width: 640px) {
   #top-bar .title-text { display: none; }
   .btn-label { display: none; }
@@ -505,12 +510,12 @@ kbd {
     font-size: 0.58rem;
   }
   #hover-iter-container {
-  position: relative;
-  margin: 10px 0 0 16px;
-  z-index: 20;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  pointer-events: none;
-}
+    position: relative;
+    margin: 10px 0 0 16px;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    pointer-events: none;
+  }
 }

@@ -23,7 +23,7 @@
       <button id="grid-btn" class="btn">▦ <span class="btn-label">Grid</span></button>
       <button id="julia-btn" class="btn">🌀 <span class="btn-label"></span>J</button>
       <button id="color-anim-btn" class="btn">🌈 <span class="btn-label">Animate</span></button>
-      <button id="audio-visualizer-btn" class="btn" title="Audio reactive color pulse">🎤 <span
+      <button id="audio-visualizer-btn" class="btn" title="Microphone reactive color pulse">🎤 <span
               class="btn-label">Pulse</span></button>
       <button id="song-upload-btn" class="btn" title="Upload song for audio pulse">🎵 <span
               class="btn-label">Song</span></button>
@@ -140,26 +140,48 @@
       <input id="shadows-checkbox" type="checkbox" style="width:1rem;height:1rem;cursor:pointer;accent-color:var(--clr-accent)"/>
     </div>
 
+    <!-- Audio Visualizer -->
     <div class="section-title">🎤 Audio Visualizer</div>
     <div style="display:flex;align-items:center;justify-content:space-between;margin-top:0.25rem">
-      <label class="block text-xs uppercase tracking-wider text-gray-400" for="audio-visualizer-checkbox">Mic
-        Pulse</label>
+      <label class="block text-xs uppercase tracking-wider text-gray-400" for="audio-visualizer-checkbox">Mic Pulse</label>
       <input id="audio-visualizer-checkbox" type="checkbox"
              style="width:1rem;height:1rem;cursor:pointer;accent-color:var(--clr-accent2)"/>
     </div>
     <div>
       <label class="block text-xs uppercase tracking-wider text-gray-400 mb-1 flex justify-between"
              for="audio-sensitivity-slider">
-        <span>Sensitivity</span>
+        <span>Pulse Sensitivity</span>
         <span id="audio-sensitivity-display">1.4</span>×
       </label>
       <input id="audio-sensitivity-slider" type="range" min="0.5" max="4" step="0.1" value="1.4"
              class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"/>
-      <div style="display:flex;gap:0.35rem;margin-top:0.5rem">
-        <button id="settings-song-upload-btn" class="btn" style="flex:1;justify-content:center">🎵 Upload Song</button>
-        <button id="settings-song-play-btn" class="btn" style="flex:1;justify-content:center" disabled>▶️ Play Song</button>
+    </div>
+
+    <!-- Song Player -->
+    <div class="section-title" style="margin-top:0.75rem">🎵 Song Player</div>
+    <div style="display:flex;gap:0.35rem;margin-top:0.35rem">
+      <button id="settings-song-upload-btn" class="btn" style="flex:1;justify-content:center">📁 Choose Song</button>
+      <button id="settings-song-play-btn" class="btn" style="flex:1;justify-content:center" disabled>▶️ Play</button>
+    </div>
+    <div id="song-name-display" class="song-name-display">No song loaded</div>
+
+    <div id="song-progress-container" style="display:none;margin-top:0.5rem">
+      <div style="display:flex;justify-content:space-between;font-size:0.65rem;color:var(--clr-muted);margin-bottom:0.2rem">
+        <span>Timeline</span>
+        <span id="song-time-display">0:00 / 0:00</span>
       </div>
-      <div id="song-name-display" class="song-name-display">No song selected</div>
+      <input id="song-progress-slider" type="range" min="0" max="100" value="0" step="0.1"
+             class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"/>
+    </div>
+
+    <div id="song-volume-container" style="margin-top:0.5rem">
+      <label class="block text-xs uppercase tracking-wider text-gray-400 mb-1 flex justify-between"
+             for="song-volume-slider">
+        <span>Song Volume</span>
+        <span id="song-volume-display">80%</span>
+      </label>
+      <input id="song-volume-slider" type="range" min="0" max="1" step="0.05" value="0.8"
+             class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"/>
     </div>
 
     <!-- Julia Set -->

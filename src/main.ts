@@ -73,6 +73,7 @@ audioControls = createAudioControls({
   getView: () => view,
   scheduleRecolor: renderer.scheduleRecolor,
   getPendingRecolorTiles: renderer.pendingRecolorTiles,
+  resetPendingRecolorTiles: renderer.resetPendingRecolorTiles,
   getTileCount: renderer.tileCount,
   getCanPulseRecolor: () => !renderer.isRendering() && !interactions.isDragging() && interactions.wheelTimerIsIdle(),
 });

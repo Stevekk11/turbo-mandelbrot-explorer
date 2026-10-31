@@ -165,6 +165,7 @@ export function createRenderer(options: {
         const view = options.getView();
         renderGen++;
         const gen = renderGen;
+        pendingRecolorTiles = 0;
 
         for (const worker of workers) worker.postMessage({type: 'clearCache'});
 
@@ -267,7 +268,7 @@ export function createRenderer(options: {
         const isCurrentRecolor = result.gen === recolorGen;
         const shouldAnimate = !options.isAnimationPaused();
 
-        if ((isCurrentRender || isCurrentRecolor) && offCtx && offscreen) {
+        if ((isCurrentRender || isCurrentRecolor) && result.imageData && offCtx && offscreen) {
             const imgData = new ImageData(new Uint8ClampedArray(result.imageData), result.tileW, result.tileH);
             offCtx.putImageData(imgData, result.tileX, result.tileY);
 
@@ -280,7 +281,16 @@ export function createRenderer(options: {
                     y: result.tileY,
                     startTime: performance.now(),
                 });
+            } else if (isCurrentRender) {
+                ctx.drawImage(offscreen, 0, 0);
+                options.onDrawOverlays();
             } else {
+                ctx.drawImage(
+                    offscreen,
+                    result.tileX, result.tileY, result.tileW, result.tileH,
+                    result.tileX, result.tileY, result.tileW, result.tileH
+                );
+            }
                 ctx.drawImage(offscreen, 0, 0);
                 options.onDrawOverlays();
             }
@@ -296,7 +306,13 @@ export function createRenderer(options: {
             }
         }
 
-        if (isCurrentRecolor) pendingRecolorTiles--;
+        if (isCurrentRecolor) {
+            pendingRecolorTiles--;
+            if (pendingRecolorTiles <= 0) {
+                pendingRecolorTiles = 0;
+                options.onDrawOverlays();
+            }
+        }
         dispatchTasks();
     }
 
@@ -390,12 +406,14 @@ export function createRenderer(options: {
         },
         cancelCurrentRender() {
             renderGen++;
+            pendingRecolorTiles = 0;
         },
         createWorkerPool,
         ctx,
         getOffscreen: () => offscreen,
         isRendering: () => isRendering,
         pendingRecolorTiles: () => pendingRecolorTiles,
+        resetPendingRecolorTiles: () => { pendingRecolorTiles = 0; },
         resizeCanvas,
         scheduleRecolor,
         scheduleRender,
